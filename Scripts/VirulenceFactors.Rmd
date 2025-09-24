@@ -13,6 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 Here we want to explore Virulenzfaktoren, presence/absence, PCA - Jaccard-Distance und PERMANOVA - zwischen den Studien, Anzahl, Diversität, zwischen den Studien und den Ländern
 ```{r}
 library(tidyverse)
+library(phyloseq)
 ```
 
 
@@ -34,7 +35,7 @@ summary(as_factor(v3$Cohort))
 library(readxl)
 xl_1 <- read_excel("/Users/rebecca/Documents/Forschung/PRIMAL/metaG_seq_2025/Liste für Novogene_14.02.2025.xlsx")
 xl_2 <- read_excel("/Users/rebecca/Documents/Forschung/PRIMAL/metaG_seq_2025/04.03.2025 qc plus 4  NC plus 10 duplikates.xlsx")
-xl_1 <- clean_names(xl_1)
+xl_1 <- janitor::clean_names(xl_1)
 
 xl_2 <- xl_2 %>% 
   mutate(no_novogene = as.numeric(gsub("A0*", "", `Sample Name`))) # removes 'A' and leading 0s
@@ -64,20 +65,11 @@ n3 <- v1 %>%
 n3_samples <- n3 %>% 
   left_join(n3_names, by=c("mainzID"="mainz_id_x"))
 
-write_csv2(n3_samples, "/Users/rebecca/Documents/Forschung/PRIMAL/metaG_seq_2025/correct_PRIMAL3_names.csv")
+#write_csv2(n3_samples, "/Users/rebecca/Documents/Forschung/PRIMAL/metaG_seq_2025/correct_PRIMAL3_names.csv")
 
 ```
 
 # rename PRIMAL samples to the sample names used in the S.aureus prevalence testing
-```{r, eval=FALSE}
-ps_all_clean <- readRDS("/Users/rebecca/Documents/Forschung/PretermMicrobiomeCatalogue/mOTU_preterm_catalogue_09152025.rds")
-
-meta_all_df_clean <- as(sample_data(ps_all_clean), "data.frame")
-
-meta_all_df_clean %>% 
-  filter(study_id=="PRIMAL")
-```
-
 
 ```{r}
 # first merge into one single data set
@@ -94,7 +86,7 @@ md %>%
 ```
 # select the samples that were also considered for the S.aureus prevalence and abundance testing
 ```{r}
-ps_all_clean <- readRDS("/Users/rebecca/Documents/Forschung/PretermMicrobiomeCatalogue/mOTU_preterm_catalogue_09152025.rds")
+ps_all_clean <- readRDS("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/mOTU_catalogue_totalReadcount.rds")
 
 meta_all_df_clean <- as(sample_data(ps_all_clean), "data.frame")
 
@@ -109,9 +101,13 @@ md_fil_primal <- md_fil %>%
   mutate(cohort = if_else(str_detect(Sample, "PRIMAL|Replicates"), "PRIMAL", "US")) %>% 
   filter(cohort == "PRIMAL")
 
-primal_samples <- md_fil_primal %>%
+primal_samples <- md_fil %>%
+   filter(Cohort%in% c("PRIMAL1", "PRIMAL2", "PRIMAL3", "Replicates")) %>% 
    separate(Sample, into = c("mainzID", "Cohort"), sep = "\\.\\.\\.", remove = F) %>% 
- left_join(primal_md, by = c(c("mainzID"="mainzID.x"), "Cohort"))
+ left_join(primal_md, by = c(c("mainzID"="mainzID.x"), "Cohort")) 
+
+primal_samples <- primal_samples%>% 
+  select(Study_id, primal_id_center, primalID_unique, Cohort, mainzID, Sample.x)
 
 PRIMAL_cat <- meta_all_df_clean %>% 
   filter(study_id=="PRIMAL")
@@ -127,10 +123,12 @@ primal3 <- PRIMAL_cat %>%
 # This pastes the study ID for PRIMAL 1, PRIMAL 2 and Replicates
 primal1_2 <- PRIMAL_cat %>%
   left_join(primal_samples %>% select(-Cohort), by= c("sample_id" ="Study_id")) %>% 
-  select(mainzID, Cohort, primal_id_center, Sample) %>% 
+  select(mainzID, Cohort, primal_id_center, Sample, Sample.x) %>% 
   filter(!is.na(mainzID))%>% 
   left_join(v1, by=c("mainzID","Cohort")) %>% 
-  select(mainzID, Cohort, primal_id_center, ID, Sample )
+  select(mainzID, Cohort, primal_id_center, ID, Sample, Sample.x)%>% 
+  mutate(ID = case_when(is.na(ID)~Sample.x, T~ID)) %>% 
+  select(colnames(primal3))
 
 final_primal_ids <- rbind(primal1_2, primal3) 
 
@@ -138,10 +136,10 @@ final_primal_ids_fil <- final_primal_ids %>%
   filter(Sample%in%c(PRIMAL_cat$Sample)) %>% 
   distinct(Sample, .keep_all = T)
 
+#write.csv(final_primal_ids, "primal_sample_ids_virulenceGenes.csv")
 # add these to the catalogue metadata
 md_cat_new <- meta_all_df_clean %>% 
-  left_join(final_primal_ids_fil, by= "Sample") %>% 
-  mutate(ID = case_when(is.na(ID)~Sample, T~ID))
+  left_join(final_primal_ids_fil %>% select(Sample,ID), by= "Sample")
 
 # retain only the samples that were also tested for S.aureus prevalence
 v1_fil <- v1 %>% 
@@ -151,7 +149,6 @@ v3_fil <- v3 %>%
   filter(Sample %in% meta_all_df_clean$Sample)
 
 matched_samples <- c(v1_fil$ID, v3_fil$Sample)
-
 ```
 
 # I want to increase presence/absence matrix with the samples that didn’t hit any virulence gene 
@@ -306,8 +303,8 @@ gene_prevalence_dol %>%
 
 gene_prevalence_dol %>% 
   filter(timepoint_category=="DOL 9-42")
-
 ```
+
 ```{r}
 library(vegan)   # for vegdist
 library(ape)     # for pcoa
