@@ -1,0 +1,67 @@
+---
+title: "table1_s_Aureus letter"
+author: "Rebecca L. Knoll"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readr)
+library(gtsummary)
+```
+
+```{r}
+md <-  read_delim("/Users/rebecca/Documents/Forschung/PRIMAL/CRFs/primal_data_sa_CRF1-4_20240131.csv")
+```
+
+
+```{r}
+glimpse(md)
+
+md  <- md %>% 
+mutate(bl_galter_ssw_2 = bl_galter_ssw+(bl_galter_tag/7)) %>% 
+mutate(vanco_flag = grepl("vanco", t31_antib_sonst_text, ignore.case = TRUE)) %>% mutate(teico_flag = grepl("teico", t31_antib_sonst_text, ignore.case = TRUE)) %>% mutate(central_line = case_when(t31_zvk==1 ~T, t31_nvk==1~T, is.na(t31_zvk)~NA, T~F))
+
+md %>% 
+  mutate(bl_galter_ssw_2 = bl_galter_ssw+(bl_galter_tag/7)) %>% 
+  select(bl_galter_ssw, bl_galter_tag, bl_galter_ssw_2,t31_enteral_nahrung_dauer) %>% 
+  summary(median= median(bl_galter_ssw_2), iqr = IQR(bl_galter_ssw_2))
+
+md %>% count(central_line)
+
+md %>% count(t31_zvk, t31_nvk)
+
+md %>% count(t31_zvk)
+
+md %>% count(t31_enteral_nahrung_dauer)
+
+md %>% count(vanco_flag)
+
+md %>% count(teico_flag)
+
+md_sel <- md %>% select(bl_galter_ssw_2, bl_gewicht, bl_geschlecht, central_line, t31_zvk, t31_enteral_nahrung_dauer, vanco_flag, teico_flag )
+
+glimpse(md_sel)
+
+md_sel %>%
+  mutate(bl_geschlecht= as.character(bl_geschlecht)) %>% 
+  mutate(t31_zvk= as.character(t31_zvk)) %>% 
+  tbl_summary(
+    statistic = list(
+      all_continuous() ~ "{median} ({p25}, {p75})",   # median (IQR)
+      all_categorical() ~ "{n} ({p}%)"                # N (%)
+    ),
+    type = list(
+      where(is.logical) ~ "categorical",              # treat logical as categorical
+      where(is.numeric) ~ "continuous"                # treat numeric as continuous
+    ),
+    digits = all_continuous() ~ 2                     # format medians nicely
+  ) %>%
+  bold_labels()
+```
+
