@@ -217,6 +217,9 @@ ggplot(gene_counts, aes(x = reorder(GENE, count), y = count)) +
   theme_minimal()
 ```
 
+# 
+
+
 
 ```{r}
 # 1. Reshape into long format
@@ -224,7 +227,10 @@ df_long <- mat %>%
   pivot_longer(-GENE, names_to = "Sample", values_to = "Presence")
 
 df_long <- df_long %>% 
-  left_join(md, by="Sample") 
+  ##### FIX THIS!!!
+  left_join(md_cat_new, by=c("Sample"="ID"))
+
+md_cat_new$ID
 
 # 2. Define cohorts
 df_long <- df_long %>%
@@ -274,8 +280,8 @@ ggplot(gene_prevalence, aes(x = reorder(GENE, -prevalence), y = prevalence, fill
 
 ggsave("gene_prevalence_perCohort.pdf", width = 16, height = 5)
 ```
-```{r}
 
+```{r}
 md_cat_new$ID <- normalize_samples(md_cat_new$ID)
 
 df_long_md <- df_long %>% left_join(md_cat_new %>% select(ID, delivery, age_years, age_days, timepoint_category, timepoint_category_2), by=c("Sample"="ID"))

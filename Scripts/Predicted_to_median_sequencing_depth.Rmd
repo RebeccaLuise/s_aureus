@@ -1,0 +1,354 @@
+---
+title: "Prevalences adjusted to sequencing depth to increase comparability across studies"
+author: "Rebecca L. Knoll"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+  library(glmmTMB)
+  library(ggplot2)
+  library(forcats)
+  library(scales)
+```
+
+```{r}
+psmelt_genus <- readRDS( "~/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/outputs/S.aureus_only_dataframe.rds")
+```
+
+```{r}
+df <- psmelt_genus %>% 
+  select(Sample, Abundance, total_reads, reads, study_id, timepoint_category, subject_id)
+
+which(is.na(df$subject_id))
+
+df <- df %>% 
+  mutate(S_aureus = Abundance/total_reads) %>% # here we calculate relative abundance of S. aureus in the sample across all taxonomic counts (total reads) in the sample
+  rename(Total_read_count= reads) %>% # this is the complete read count of the sample
+  rename(study=study_id, Timepoint=timepoint_category) %>% select(-c(total_reads))
+
+```
+
+#Prep & counts from relative abundance ---
+```{r}
+df <- df %>%
+  mutate(
+    study = factor(study),
+    Timepoint = factor(Timepoint),
+    Total_read_count = as.numeric(Total_read_count),
+    S_aureus = as.numeric(S_aureus)
+  ) %>%
+  filter(!is.na(S_aureus), !is.na(Total_read_count), Total_read_count > 0) %>%
+  #mutate(
+   # S_aureus_count = round(S_aureus * Total_read_count),
+   # S_aureus_count = pmax(S_aureus_count, 0)) 
+  rename(S_aureus_count=Abundance)
+```
+
+# Choose a reference sequencing depth D* (use the same D* for all outputs) 
+```{r}
+D_star <- median(df$Total_read_count, na.rm = TRUE)
+```
+
+# --- 1) One NB model with offset(log depth); study + timepoint as FIXED effects ---
+```{r}
+
+fit_nb <- glmmTMB(
+  S_aureus_count ~ study + Timepoint + (1|subject_id) + offset(log(Total_read_count)), #
+  family = nbinom2, # negative binomial distribution
+  data = df
+)
+
+# NB dispersion parameter (theta, a.k.a. "size")
+theta <- sigma(fit_nb)  # for nbinom2: Var = mu + mu^2/theta -> this is what glmmTMB uses for nbinom2
+```
+# model per subject id
+```{r}
+
+```
+
+
+# --- 2) Predict at fixed depth D* for each sample's covariates ---
+```{r}
+nd <- df
+nd$Total_read_count <- D_star
+
+mu_star <- predict(fit_nb, newdata = nd, type = "response")  # expected counts at D*
+
+# Adjusted counts/relative abundance (apply your "<1 read => 0" rule)
+adj_count <- ifelse(mu_star < 1, 0, mu_star)
+adj_rel   <- adj_count / D_star
+
+# Probability of detection at D* (≥1 read) from NB pmf
+p0       <- (theta / (theta + mu_star))^theta
+p_detect <- 1 - p0
+
+df_std <- df %>%
+  mutate(
+    D_star    = D_star,
+    adj_count = adj_count,
+    adj_rel   = adj_rel,
+    p_detect  = p_detect
+  )
+```
+
+```{r, eval=FALSE}
+
+# Get fitted mean at observed depth
+mu_obs <- predict(fit_nb, newdata = df, type = "response")
+
+# Adjust from observed depth to D_star
+mu_star <- mu_obs * (D_star / df$Total_read_count)
+
+# Adjusted counts/relative abundance (apply your "<1 read => 0" rule)
+adj_count <- ifelse(mu_star < 1, 0, mu_star)
+adj_rel   <- adj_count / D_star
+
+# Probability of detection at D* (≥1 read) from NB pmf
+p0       <- (theta / (theta + mu_star))^theta
+p_detect <- 1 - p0
+
+df_std <- df %>%
+  mutate(
+    D_star    = D_star,
+    adj_count = adj_count,
+    adj_rel   = adj_rel,
+    p_detect  = p_detect
+  )
+
+```
+# --- 3) Aggregate to prevalence by study × timepoint (point estimates) ---
+```{r}
+prev_by_study_tp <- df_std %>%
+  group_by(study, Timepoint) %>%
+  summarise(prevalence = mean(p_detect), n = dplyr::n(), .groups = "drop") %>%
+  group_by(Timepoint) %>%
+  mutate(study = fct_reorder(study, prevalence, .fun = mean)) %>%
+  ungroup()
+```
+
+# --- 4) 95% CIs for prevalence via parametric bootstrap under NB at D* ---
+```{r}
+# We simulate counts Y_i ~ NB(size=theta, mu=mu_star_i),
+# convert to presence (Y_i >= 1), and average within each study×timepoint.
+set.seed(1)
+B <- 500  # increase to 2000 for publication-grade CIs
+
+# Matrix of simulated counts (n samples × B sims)
+n  <- nrow(df_std)
+Ysim <- matrix(rnbinom(n * B, size = theta, mu = mu_star), nrow = n, ncol = B)
+
+# Presence indicators
+Isim <- (Ysim >= 1) * 1L
+
+# Group index for aggregation
+grp <- interaction(df_std$study, df_std$Timepoint, drop = TRUE)
+grp_levels <- levels(grp)
+G <- length(grp_levels)
+
+# Compute prevalence per group per bootstrap draw
+prev_boot <- matrix(NA_real_, nrow = G, ncol = B,
+                    dimnames = list(grp_levels, NULL))
+for (g in seq_len(G)) {
+  idx <- which(grp == grp_levels[g])
+  if (length(idx) > 0) {
+    prev_boot[g, ] <- colMeans(Isim[idx, , drop = FALSE])
+  }
+}
+
+# Summarise CIs
+ci_tbl <- data.frame(
+  grp = grp_levels,
+  prev_lo = apply(prev_boot, 1, quantile, probs = 0.025, na.rm = TRUE),
+  prev_hi = apply(prev_boot, 1, quantile, probs = 0.975, na.rm = TRUE)
+) %>%
+  tidyr::separate(grp, into = c("study", "Timepoint"), sep = "\\.") %>%
+  mutate(
+    study = factor(study, levels = levels(df_std$study)),
+    Timepoint = factor(Timepoint, levels = levels(df_std$Timepoint))
+  )
+
+# Merge point estimates with CIs
+prev_plot_df <- prev_by_study_tp %>%
+  left_join(ci_tbl, by = c("study", "Timepoint"))
+```
+
+# --- 5) PLOTS ---
+```{r}
+# (A) Depth-standardized prevalence with 95% CIs
+p_prev <- ggplot(prev_plot_df, aes(x = study, y = prevalence)) +
+  geom_col() +
+  geom_errorbar(aes(ymin = prev_lo, ymax = prev_hi), width = 0.25) +
+  geom_text(aes(label = percent(prevalence, accuracy = 0.1)),
+            vjust = -0.2, size = 3) +
+  coord_cartesian(ylim = c(0, 1.05)) +
+  facet_wrap(~ Timepoint, nrow = 1, scales = "free_x") +
+  labs(
+    title = "Depth-standardized S. aureus prevalence (≥1 read at D*)",
+    subtitle = paste0("NB GLM with offset(log depth); D* = ", format(D_star, big.mark = ","), " reads"),
+    x = "Study", y = "Prevalence (mean P[≥1 read])"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# (B) Depth-standardized relative abundance (same model)
+p_rel <- ggplot(df_std, aes(x = study, y = adj_rel*1000000)) +
+  geom_boxplot(outlier.shape = 16, outlier.size = 1.5) +
+  scale_y_log10()+
+  #  breaks = c(0.001, 0.01, 0.1, 1, 10, 100),  # breaks at 0.1%, 1%, 10%, 100%
+    #labels = label_percent(scale = 1, accuracy = 0.1)  # format as %
+ #) +
+  facet_wrap(~ Timepoint, nrow = 1, scales = "free_x") +
+  labs(
+    title = "Depth-standardized S. aureus relative abundance at D*",
+    subtitle = "NB GLM with offset(log depth); same model as prevalence",
+    x = "Study", y = "Adjusted relative abundance"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(p_prev)
+print(p_rel)
+
+summary(df_std$adj_rel)
+```
+# improved plot for prevalence
+```{r}
+prevalence_df <- prev_plot_df %>% 
+  mutate(study_short = case_when(study=="Gasparrini_2019_infant"~"Gasparrini",study=="Gibson_2016_preterm"~"Gibson",study=="Morrow_2016_preterm_infants"~"Morrow",study=="Parnanen_2019_infant"~"Pärnanen", study=="Rahman_2018_preterm_NICU"~"Rahman", T~study)) %>% 
+  mutate(x_label = paste0(study_short, ", N=", n))
+
+prevalence_df$study_short <- factor(prevalence_df$study_short, levels=c("PRIMAL","Gibson","Rahman",  "Gasparrini",  "Morrow", "Pärnanen"))
+
+prevalence_df$x_label
+
+x_label_levels <- c( "PRIMAL, N=223", 
+  "PRIMAL, N=50", 
+  "PRIMAL, N=434",
+  "Gibson, N=201", 
+  "Gibson, N=32", 
+  "Gibson, N=161",
+  "Rahman, N=94", 
+  "Rahman, N=14", 
+  "Rahman, N=193",
+  "Gasparrini, N=51", 
+  "Gasparrini, N=137", 
+  "Gasparrini, N=64",
+  "Morrow, N=60", 
+  "Morrow, N=20",
+  "Pärnanen, N=38",
+  "Pärnanen, N=1"
+)
+
+
+prevalence_df$x_label <- factor(prevalence_df$x_label, levels = x_label_levels)
+
+prevalence_df$Timepoint<- factor(prevalence_df$Timepoint, levels=c("DOL 1-8", "DOL 9-42", "DOL 43-455"))
+
+# Calculate medians per facet (timepoint_category)
+hline_data <- prevalence_df %>%
+  group_by(Timepoint) %>%
+  summarise(hline_y = mean(prevalence, na.rm = TRUE))
+
+library(ggtext)
+
+p4 <- ggplot(prevalence_df, aes(x = x_label, y = prevalence, fill = study_short)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_errorbar(aes(ymin = prev_lo, ymax = prev_hi), width = 0.25) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = c("#88C9BF", "#D9D9D9", "#BDBDBD", "#969696", "#636363", "#4D4D4D")) +
+  facet_grid(~Timepoint, scales = "free_x", space = "free") +
+  theme_minimal(base_size = 14) +
+  theme(
+    strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
+    strip.text = element_text(face = "bold", size = 14, color = "black"),
+    axis.text.x = element_text(angle = 45, hjust = 1), axis.title.y = element_markdown(),
+    panel.spacing = unit(1, "lines")
+  ) +
+  labs(y = "*S. aureus* prevalence predicted", fill = "Study", x = "") +
+  guides(fill = guide_legend(nrow = 1, position = "bottom"))+
+  geom_hline(data = hline_data, aes(yintercept = hline_y), colour = "black", linetype = 2)
+p4
+```
+
+# improved plot for predicted rel. abundance
+```{r}
+# Calculate medians per facet (timepoint_category)
+hline_data_relab <- df_std%>%
+  group_by(Timepoint) %>%
+  summarise(hline_y = round(mean(adj_rel*1000000, na.rm = TRUE), digits = 2))
+
+hline_data_relab$Timepoint <- factor(hline_data_relab$Timepoint,  levels = c("DOL 1-8", "DOL 9-42", "DOL 43-455"))
+
+df_std<- df_std %>% 
+  mutate(study_short = case_when(study=="Gasparrini_2019_infant"~"Gasparrini",study=="Gibson_2016_preterm"~"Gibson",study=="Morrow_2016_preterm_infants"~"Morrow",study=="Parnanen_2019_infant"~"Pärnanen", study=="Rahman_2018_preterm_NICU"~"Rahman", T~study)) %>% 
+  group_by(study, Timepoint) %>% 
+  mutate(n=n()) %>% 
+  ungroup() %>% 
+  mutate(x_label = paste0(study_short, ", N=", n))
+
+df_std$study_short <- factor(df_std$study_short, levels=c("PRIMAL","Gibson","Rahman",  "Gasparrini",  "Morrow", "Pärnanen"))
+
+prevalence_df$x_label
+
+x_label_levels <- c( "PRIMAL, N=223", 
+  "PRIMAL, N=50", 
+  "PRIMAL, N=434",
+  "Gibson, N=201", 
+  "Gibson, N=32", 
+  "Gibson, N=161",
+  "Rahman, N=94", 
+  "Rahman, N=14", 
+  "Rahman, N=193",
+  "Gasparrini, N=51", 
+  "Gasparrini, N=137", 
+  "Gasparrini, N=64",
+  "Morrow, N=60", 
+  "Morrow, N=20",
+  "Pärnanen, N=38",
+  "Pärnanen, N=1"
+)
+
+
+df_std$x_label <- factor(df_std$x_label, levels = x_label_levels)
+
+df_std$Timepoint<- factor(df_std$Timepoint, levels=c("DOL 1-8", "DOL 9-42", "DOL 43-455"))
+
+library(scales)
+df_std %>% 
+ggplot(aes(x = x_label, y = adj_rel* 1000000, fill = study_short)) +
+  geom_boxplot(outlier.shape = NA, width = 0.6) +
+  scale_y_log10() +
+  scale_fill_manual(values = c("#88C9BF", "#D9D9D9", "#BDBDBD", "#969696", "#636363", "#4D4D4D")) +
+  facet_grid(~Timepoint, scales = "free_x", space = "free") +
+  theme_minimal(base_size = 14) +
+  theme(
+    strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
+    strip.text = element_text(face = "bold", size = 14),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.y = element_markdown(),
+    panel.spacing = unit(1, "lines")
+  ) +
+  labs(
+    y = "*S. aureus* predicted reads per million",
+    fill = "Study",
+    x = ""
+  ) +
+  guides(fill = guide_legend(nrow = 1, position = "bottom"))+
+  geom_hline(data = hline_data_relab, aes(yintercept = hline_y), colour = "black", linetype = 2)
+```
+
+
+```{r}
+
+df_std %>% 
+  group_by(study, Timepoint) %>% 
+  count(adj_count)
+```
+
+

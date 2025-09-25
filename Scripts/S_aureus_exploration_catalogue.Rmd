@@ -14,6 +14,7 @@ pacman::p_load(tidyverse, phyloseq, magrittr, janitor, microbiome, knitr, lubrid
 
 library(phyloseq)
 library(gtsummary)
+library(ggpubr)
 primal_md <-  read.csv("~/Documents/Forschung/preterm_metaG_analysis/data/Metadata/PRIMAL_master_metadata_20250402.csv")
 
 spire_primal<- read.delim("~/Documents/Forschung/preterm_metaG_analysis/data/spire_motus.20250607.tsv")
@@ -511,12 +512,13 @@ meta_all_df_clean <- meta_all_df %>%
   column_to_rownames("sample_ps_id")
 
 sample_data(ps_all_clean) <- sample_data(meta_all_df_clean)
+  
 ```
 
 # save cleaned mOTU_preterm_catalogue
 ```{r}
 
-#saveRDS(ps_all_clean, "/Users/rebecca/Documents/Forschung/PretermMicrobiomeCatalogue/mOTU_preterm_catalogue_09152025.rds")
+#saveRDS(ps_all_clean, "/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/mOTU_catalogue_totalReadcount.rds")
 ```
 
 # extract S. aureus and melt phyloseqs
@@ -617,7 +619,7 @@ psmelt_genus <- psmelt_genus %>%
   left_join(meta_all_df %>% select(all_of(c("sample_ps_id", new_cols))),
             by = c("Sample" = "sample_ps_id"))
 
-write_rds(psmelt_genus, "~/Documents/Forschung/S_aureus_letter/S.aureus_only_dataframe.rds")
+write_rds(psmelt_genus, "~/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/outputs/S.aureus_only_dataframe.rds")
 ```
 
 # calculate incidence per time point
