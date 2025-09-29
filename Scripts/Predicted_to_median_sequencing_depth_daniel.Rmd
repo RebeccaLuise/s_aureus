@@ -1,0 +1,549 @@
+---
+title: "Prevalences adjusted to sequencing depth to increase comparability across studies"
+author: "Rebecca L. Knoll"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(glmmTMB)
+library(ggplot2)
+library(forcats)
+library(scales)
+library(ggpubr)
+library(ggtext)
+```
+
+
+```{r}
+psmelt_genus <- readRDS( "/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/S.aureus_only_dataframe.rds")
+```
+
+```{r}
+df <- psmelt_genus %>% 
+  select(Sample, Abundance, total_reads, reads, study_id, timepoint_category, subject_id)
+
+which(is.na(df$subject_id))
+
+df <- df %>% 
+  mutate(S_aureus = Abundance/total_reads) %>% # here we calculate relative abundance of S. aureus in the sample across all taxonomic counts (total reads) in the sample
+  rename(Total_read_count= reads) %>% # this is the complete read count of the sample
+  rename(study=study_id, Timepoint=timepoint_category) %>% select(-c(total_reads))
+
+```
+
+#Prep & counts from relative abundance ---
+```{r}
+df <- df %>%
+  mutate(
+    study = factor(study),
+    Timepoint = factor(Timepoint),
+    Total_read_count = as.numeric(Total_read_count),
+    S_aureus = as.numeric(S_aureus)
+  ) %>%
+  filter(!is.na(S_aureus), !is.na(Total_read_count), Total_read_count > 0) %>%
+  rename(S_aureus_count=Abundance)
+```
+
+## Median sequencing depth
+```{r}
+# Reference depth D* (use same D* for all outputs)
+D_star <- median(df$Total_read_count, na.rm = TRUE)
+
+df_std <- df %>%
+  mutate(
+    # calculate the rate of S aureus counts detected per sequenced read, multiply with one depth across all samples
+    adj_count = (S_aureus_count / Total_read_count) * D_star,
+    # then calculate the adjusted relative abundance of these adjusted counts to fixed depth, this bascially generates the percentage of how many reads within this adjusted count map to S.aureus
+    adj_rel   = adj_count / D_star,
+      present   = as.integer(adj_count >= 1)
+
+  )
+```
+
+## Minimum sequencing depth
+```{r}
+# Reference depth D* (use same D* for all outputs)
+D_star_min <- min(df$Total_read_count, na.rm = TRUE)
+
+summary(df$Total_read_count, na.rm = TRUE)
+
+`1st Qu.` <- 6397106
+
+D_star_1stQ <- `1st Qu.`
+
+df_std <- df %>%
+  mutate(
+    # calculate the rate of S aureus counts detected per sequenced read, multiply with one depth across all samples
+    adj_count_min = (S_aureus_count / Total_read_count) * D_star_min,
+      present_min   = as.integer(adj_count_min >= 1),
+adj_count_1stQ = (S_aureus_count / Total_read_count) * D_star_1stQ,
+      present_min   = as.integer(adj_count_1stQ >= 1),
+  )
+```
+
+```{r}
+# correlation before, sig
+df_std %>% 
+  ggplot(aes(x=S_aureus_count, y= Total_read_count)) + 
+  geom_point() + 
+  theme(aspect.ratio = 1) + 
+  scale_x_continuous(trans=pseudo_log_trans()) + 
+  scale_y_continuous(trans=pseudo_log_trans()) + 
+  stat_cor()
+
+# correlation after, ns
+df_std %>% 
+  ggplot(aes(x=adj_count, y= Total_read_count)) + 
+  geom_point() + 
+  theme(aspect.ratio = 1) + 
+  scale_x_continuous(trans=pseudo_log_trans()) + 
+  scale_y_continuous(trans=pseudo_log_trans()) +
+  stat_cor()
+
+df_std%>% 
+  ggplot(aes(x=adj_count, y= adj_rel)) + 
+  geom_point() + 
+  theme(aspect.ratio = 1) + 
+  #scale_x_continuous(trans=pseudo_log_trans()) + 
+  #scale_y_continuous(trans=pseudo_log_trans()) +
+  stat_cor()
+
+```
+
+```{r}
+library(ggplot2)
+library(scales)
+library(broom)
+
+#------------------------------------------------------------
+# Prepare transformed values (avoid log(0))
+df_std <- df_std %>%
+  mutate(
+    count_pseudo = S_aureus_count,
+    adj_count_pseudo = adj_count,
+    depth_pseudo = Total_read_count
+  )
+
+# Function to fit lm on log10 scale & extract R², r, p
+get_stats <- function(x, y) {
+  # log-transform safely
+  lx <- log10(x + 1)
+  ly <- log10(y + 1)
+  fit <- lm(ly ~ lx)
+  smry <- summary(fit)
+  r2 <- smry$r.squared
+  r  <- sqrt(r2) * sign(coef(fit)[2])
+  p  <- smry$coefficients[2,4]
+  list(r2 = r2, r = r, p = p)
+}
+
+stats_before <- get_stats(df_std$Total_read_count, df_std$S_aureus_count)
+stats_after  <- get_stats(df_std$Total_read_count, df_std$adj_count)
+
+#------------------------------------------------------------
+# Scatterplots with pseudo_log_trans
+plot_scatter <- function(df, x, y, stats, title) {
+  label <- paste0(
+    "R² = ", round(stats$r2, 3),
+    ", r = ", round(stats$r, 3),
+    ", p = ", signif(stats$p, 3)
+  )
+  
+  ggplot(df, aes(x = {{x}}, y = {{y}})) +
+    geom_point(alpha = 0.6) +
+    theme(aspect.ratio = 1) +
+    scale_x_continuous(trans = pseudo_log_trans()) +
+    scale_y_continuous(trans = pseudo_log_trans()) +
+    labs(
+      title = title,
+      subtitle = paste("Depth reference D* =", format(D_star, big.mark=",")),
+      x = "Total read count",
+      y = deparse(substitute(y))
+    ) +
+    annotate("text",
+             x = max(df$Total_read_count, na.rm=TRUE),
+             y = min(df[[deparse(substitute(y))]], na.rm=TRUE)+1,
+             label = label,
+             hjust = 1, vjust = 0, size = 4, fontface = "bold", color='red')
+}
+
+p_before <- plot_scatter(df_std, Total_read_count, S_aureus_count,
+                         stats_before, "Before depth adjustment")
+
+p_after  <- plot_scatter(df_std, Total_read_count, adj_count,
+                         stats_after, "After depth adjustment")
+
+p_before
+p_after
+```
+
+
+```{r}
+df_std %>% 
+  ggplot(aes(x=S_aureus_count, y= adj_count)) + 
+  geom_point() + 
+  theme(aspect.ratio = 1) + 
+  scale_x_log10() + 
+  scale_y_log10() + 
+  stat_cor()
+
+df_std %>% 
+  ggplot(aes(x=S_aureus, y= adj_rel)) + 
+  geom_point() + 
+  theme(aspect.ratio = 1) + 
+  scale_x_log10() + 
+  scale_y_log10() + 
+  stat_cor()
+```
+
+```{r}
+library(dplyr)
+  library(ggplot2)
+  library(forcats)
+  library(scales)
+  library(ggtext)
+```
+
+```{r}
+# Define short names (keys = long names, values = short labels)
+short_map <- c(
+  "PRIMAL"      = "PRIMAL",
+   "Gibson_2016_preterm"="Gibson",
+  "Rahman_2018_preterm_NICU"="Rahman",
+  "Gasparrini_2019_infant"="Gasparrini",
+  "Morrow_2016_preterm_infants"="Morrow",
+  "Parnanen_2019_infant"="Pärnanen" 
+)
+
+```
+
+
+```{r}
+# Short names (extend as needed)
+# --- Define the fixed order (must match your palette keys) ---
+study_order <- c("PRIMAL","Gibson","Rahman","Gasparrini","Morrow","Pärnanen")
+time_levels <- c("DOL 1-8","DOL 9-42","DOL 43-455")
+
+# Short names already built in df_std via short_map
+short_map
+# N per study×timepoint (for labels)
+n_by_group <- df_std %>% count(study, Timepoint, name = "N")
+
+# =========================
+# A) PREVALENCE (≥1 read at D*) in fixed order (per Timepoint)
+# =========================
+prev_by_study_tp <- df_std %>%
+  group_by(study, Timepoint) %>%
+  summarise(prevalence = mean(present), .groups = "drop") %>%
+  left_join(n_by_group, by = c("study","Timepoint")) %>%
+  mutate(
+    study_short = ifelse(study %in% names(short_map),
+                         short_map[as.character(study)],
+                         as.character(study)),
+    Timepoint = factor(Timepoint, levels = time_levels),
+    study_short = factor(study_short, levels = study_order),
+    x_label = paste0(as.character(study_short), ", N=", N),
+    x_key   = paste(Timepoint, x_label, sep = "|")
+  ) %>%
+  group_by(Timepoint) %>%
+  arrange(study_short, .by_group = TRUE) %>%
+  ungroup()
+
+levels_prev <- prev_by_study_tp %>%
+  arrange(Timepoint, study_short) %>%
+  pull(x_key) %>% unique()
+
+prev_by_study_tp <- prev_by_study_tp %>%
+  mutate(x_key = factor(x_key, levels = levels_prev))
+
+hline_data_prev <- prev_by_study_tp %>%
+  group_by(Timepoint) %>%
+  summarise(hline_y = mean(prevalence, na.rm = TRUE), .groups = "drop")
+
+# =========================
+# B) REL. ABUNDANCE (ppm, log) in fixed order (per Timepoint)
+# =========================
+df_for_plot <- df_std %>%
+  left_join(n_by_group, by = c("study","Timepoint")) %>%
+  mutate(
+    study_short = ifelse(study %in% names(short_map),
+                         short_map[as.character(study)],
+                         as.character(study)),
+    Timepoint = factor(Timepoint, levels = time_levels),
+    study_short = factor(study_short, levels = study_order),
+    x_label = paste0(as.character(study_short), ", N=", N),
+    x_key   = paste(Timepoint, x_label, sep = "|")
+  ) %>%
+  group_by(Timepoint) %>%
+  arrange(study_short, .by_group = TRUE) %>%
+  ungroup()
+
+levels_abund <- df_for_plot %>%
+  arrange(Timepoint, study_short) %>%
+  pull(x_key) %>% unique()
+
+df_for_plot <- df_for_plot %>%
+  mutate(x_key = factor(x_key, levels = levels_abund))
+
+hline_data_relab <- df_for_plot %>%
+  group_by(Timepoint) %>%
+  summarise(hline_y = mean(adj_rel * 1e6, na.rm = TRUE), .groups = "drop")
+
+# =========================
+# Palette: map by NAME; legend order = study_order
+# =========================
+fill_palette <- c(
+  "PRIMAL"     = "#88C9BF",
+  "Gibson"     = "#D9D9D9",
+  "Rahman"     = "#BDBDBD",
+  "Gasparrini" = "#969696",
+  "Morrow"     = "#636363",
+  "Pärnanen"   = "#4D4D4D"
+)
+present <- union(unique(as.character(prev_by_study_tp$study_short)),
+                 unique(as.character(df_for_plot$study_short)))
+legend_order <- study_order[study_order %in% present]
+fill_palette <- fill_palette[legend_order]
+
+# =========================
+# Plots (labels stripped from x_key)
+# =========================
+p_prev <- ggplot(prev_by_study_tp, aes(x = x_key, y = prevalence, fill = study_short)) +
+  geom_col() +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
+  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  geom_hline(data = hline_data_prev, aes(yintercept = hline_y),
+             colour = "black", linetype = 2, inherit.aes = FALSE) +
+  scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
+  labs(
+    title = "Depth-standardized *S. aureus* prevalence (≥1 read at D*)",
+    subtitle = paste0("Simple rescaling to D* = ", format(D_star, big.mark=","), " reads"),
+    y = "*S. aureus* prevalence", x = "", fill = "Study"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
+        strip.text = element_text(face = "bold", size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.y = ggtext::element_markdown(),
+        panel.spacing = unit(1, "lines")) +
+  guides(fill = guide_legend(nrow = 1, position = "bottom"))
+
+p_rel <- ggplot(df_for_plot, aes(x = x_key, y = adj_rel * 1e6, fill = study_short)) +
+  geom_boxplot(outlier.shape = NA, width = 0.6) +
+  scale_y_log10() +
+  scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
+  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  geom_hline(data = hline_data_relab, aes(yintercept = hline_y),
+             colour = "black", linetype = 2, inherit.aes = FALSE) +
+  scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
+  labs(
+    title = "Depth-standardized *S. aureus* relative abundance at D*",
+    #subtitle = paste0("Simple rescaling to D* = ", format(D_star, big.mark=","), " reads"),
+    y = "*S. aureus* adjusted reads per million", x = "", fill = "Study"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
+        strip.text = element_text(face = "bold", size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.y = ggtext::element_markdown(),
+        title= ggtext::element_markdown(),
+        panel.spacing = unit(1, "lines")) +
+  guides(fill = guide_legend(nrow = 1, position = "bottom"))
+
+print(p_prev)
+print(p_rel)
+```
+# plot adjusted count
+```{r}
+ggplot(df_for_plot, aes(x = x_key, y = adj_rel * 1e6, fill = study_short)) +
+  geom_boxplot(outlier.shape = NA, width = 0.6) +
+  scale_y_log10() +
+  scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
+  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  geom_hline(data = hline_data_relab, aes(yintercept = hline_y),
+             colour = "black", linetype = 2, inherit.aes = FALSE) +
+  scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
+  labs(
+    title = "Depth-standardized *S. aureus* relative abundance at D*",
+    #subtitle = paste0("Simple rescaling to D* = ", format(D_star, big.mark=","), " reads"),
+    y = "*S. aureus* adjusted reads per million", x = "", fill = "Study"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
+        strip.text = element_text(face = "bold", size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.y = ggtext::element_markdown(),
+        title= ggtext::element_markdown(),
+        panel.spacing = unit(1, "lines")) +
+  guides(fill = guide_legend(nrow = 1, position = "bottom"))
+```
+
+# plot sequencing depths per timepoint and study
+```{r}
+
+hline_data_readCount <- df_for_plot %>%
+  group_by(Timepoint) %>%
+  summarise(hline_y = median(Total_read_count, na.rm = TRUE), .groups = "drop")
+
+df_for_plot %>% 
+  ggplot(aes(y=Total_read_count,x=x_key, fill = study_short))+
+  geom_boxplot(outlier.shape = NA, width = 0.6) +
+  scale_y_log10() +
+  scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
+  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  geom_hline(yintercept = D_star,
+             colour = "black", linetype = 2, inherit.aes = FALSE) +
+  scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
+  labs(
+    title = "Sequencing depth per study and timepoint category",
+    y = "Total read count (log scale)", x = "", fill = "Study"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
+        strip.text = element_text(face = "bold", size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.y = ggtext::element_markdown(),
+        panel.spacing = unit(1, "lines")) +
+  guides(fill = guide_legend(nrow = 1, position = "bottom"))
+```
+
+# explore why Morrow at DOL 9-42 has a prevalence of 0 after read depth adjustment
+```{r}
+df_for_plot %>% 
+  filter(x_key=="DOL 9-42|Morrow, N=20")
+  
+df %>% 
+  filter(study=="Morrow_2016_preterm_infants", Timepoint=="DOL 9-42")
+
+# There is only one sample out of 20 = 5%, that had a single read count for S.aureus out of 85362596 reads, hence our normalizing approach works!
+
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# before adjustment
+df %>%
+  mutate(detected = as.integer(S_aureus_count > 0)) %>%
+  group_by(study) %>%
+  summarize(median_reads = median(Total_read_count, na.rm=TRUE),
+            mean_detect_rate = mean(detected, na.rm=TRUE)) -> summary_by_study
+
+ggplot(df, aes(x = Total_read_count, y = as.integer(S_aureus_count>0), color = study)) +
+  geom_jitter(height = 0.02, alpha = 0.4) +
+  stat_smooth(method = "glm", method.args = list(family = "binomial"),
+              se = FALSE, aes(group = study)) +
+  scale_x_log10() +
+  labs(x = "Total reads (log scale)", y = "Observed detection (0/1)",
+       title = "Detection probability vs sequencing depth before depth adjustment to D*") +
+  theme_minimal()
+
+ggplot(df_std, aes(x = Total_read_count, y = as.integer(S_aureus_count>0))) +
+  geom_jitter(height = 0.02, alpha = 0.4) +
+  stat_smooth(method = "glm", method.args = list(family = "binomial"),
+              se = FALSE) +
+  scale_x_log10() +
+  labs(x = "Total reads (log scale)", y = "Observed detection (0/1)",
+       title = "Detection probability vs sequencing depth BEFORE depth adjustment to D*") +
+  theme_minimal()
+
+# after adjustment
+df_std %>%
+  mutate(detected = as.integer(adj_count >= 1)) %>%
+  group_by(study) %>%
+  summarize(median_reads = median(Total_read_count, na.rm=TRUE),
+            mean_detect_rate = mean(detected, na.rm=TRUE)) -> summary_by_study_adj
+
+ggplot(df_std, aes(x = Total_read_count, y = as.integer(adj_count >= 1), color = study)) +
+  geom_jitter(height = 0.02, alpha = 0.4) +
+  stat_smooth(method = "glm", method.args = list(family = "binomial"),
+              se = FALSE, aes(group = study)) +
+  scale_x_log10() +
+  labs(x = "Total reads (log scale)", y = "Observed detection (0/1)",
+       title = "Detection probability vs sequencing depth AFTER depth adjustment to D*") +
+  theme_minimal()
+
+
+ggplot(df_std, aes(x = Total_read_count, y = as.integer(adj_count >= 1))) +
+  geom_jitter(height = 0.02, alpha = 0.4) +
+  stat_smooth(method = "glm", method.args = list(family = "binomial"),
+              se = FALSE) +
+  scale_x_log10() +
+  labs(x = "Total reads (log scale)", y = "Observed detection (0/1)",
+       title = "Detection probability vs sequencing depth AFTER depth adjustment to D*") +
+  theme_minimal()
+
+```
+```{r}
+# Fit logistic regression
+fit <- glm(I(S_aureus_count > 0) ~ log10(Total_read_count), 
+           data = df, family = "binomial")
+
+# Extract coefficient for log10(Total_read_count)
+coef_est <- coef(summary(fit))["log10(Total_read_count)", "Estimate"]
+coef_se  <- coef(summary(fit))["log10(Total_read_count)", "Std. Error"]
+p_val    <- coef(summary(fit))["log10(Total_read_count)", "Pr(>|z|)"]
+
+# Odds ratio and 95% CI
+OR  <- exp(coef_est)
+CI  <- exp(c(coef_est - 1.96*coef_se, coef_est + 1.96*coef_se))
+
+# Format label
+label_text <- paste0("OR = ", round(OR, 2),
+                     " (", round(CI[1], 2), "-", round(CI[2], 2), ")\n",
+                     "p = ", signif(p_val, 3))
+ggplot(df, aes(x = log10(Total_read_count), 
+               y = as.integer(S_aureus_count > 0))) +
+  geom_jitter(height = 0.02, alpha = 0.4) +
+  stat_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = FALSE, color = "blue") +
+  labs(x = "log10(Total reads)", y = "S. aureus detected unadjusted (0/1)") +
+  annotate("text", x = 5, y = 0.9,   # adjust position as needed
+           label = label_text,
+           hjust = 0, size = 4)
+
+
+```
+```{r}
+# Fit logistic regression
+fit <- glm(I(adj_count >= 1) ~ log10(Total_read_count), 
+           data = df_std, family = "binomial")
+
+# Extract coefficient for log10(Total_read_count)
+coef_est <- coef(summary(fit))["log10(Total_read_count)", "Estimate"]
+coef_se  <- coef(summary(fit))["log10(Total_read_count)", "Std. Error"]
+p_val    <- coef(summary(fit))["log10(Total_read_count)", "Pr(>|z|)"]
+
+# Odds ratio and 95% CI
+OR  <- exp(coef_est)
+CI  <- exp(c(coef_est - 1.96*coef_se, coef_est + 1.96*coef_se))
+
+# Format label
+label_text <- paste0("OR = ", round(OR, 2),
+                     " (", round(CI[1], 2), "-", round(CI[2], 2), ")\n",
+                     "p = ", signif(p_val, 3))
+ggplot(df_std, aes(x = log10(Total_read_count), 
+               y = as.integer(adj_count >= 1))) +
+  geom_jitter(height = 0.02, alpha = 0.4) +
+  stat_smooth(method = "glm", 
+              method.args = list(family = "binomial"), 
+              se = FALSE, color = "blue") +
+  labs(x = "log10(Total reads)", y = "S. aureus detected adjusted To D* (0/1)") +
+  annotate("text", x = 5, y = 0.9,   # adjust position as needed
+           label = label_text,
+           hjust = 0, size = 4)
+```
+
+# calculate to minimum reads
+
+
+# rarefaction to 20 mio reads

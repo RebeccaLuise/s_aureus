@@ -160,6 +160,12 @@ normalize_samples <- function(samples) {
     str_replace("-(\\d+)(\\.\\.\\..+)$", ".\\1\\2")
 }
 
+normalize_samples <- function(samples) {
+  samples %>%
+    # turn "-<digits> [anything until ...]" into ".<digits>"
+    str_replace("-(\\d+).*?(\\.\\.\\..+)$", ".\\1\\2")
+}
+
 # Get current sample names in matrix
 present_samples <- colnames(vfdb[5:449])
 
@@ -187,7 +193,8 @@ zero_mat <- matrix(
 )
 
 vfdb_mat <- cbind(vfdb_mat_filtered, zero_mat)
-vfdb_mat[vfdb_mat > 1] <- 1 # this truly sets all genes to presence/absence = 1 vs 1
+
+#vfdb_mat[vfdb_mat > 1] <- 1 # this truly sets all genes to presence/absence = 1 vs 1
 
 # Bind missing samples to existing matrix
 vfdb_full <- cbind(vfdb[,1:4], vfdb_mat) # add gene names again
@@ -224,18 +231,23 @@ ggplot(gene_counts, aes(x = reorder(GENE, count), y = count)) +
 ```{r}
 # 1. Reshape into long format
 df_long <- mat %>%
-  pivot_longer(-GENE, names_to = "Sample", values_to = "Presence")
+  pivot_longer(-GENE, names_to = "Sample", values_to = "Gene count")
+
+
+
+md_cat_new$ID <- normalize_samples(md_cat_new$ID)
+
+md_cat_new <- md_cat_new %>% 
+  mutate(ID = case_when(is.na(ID)~Sample, T~ID))
 
 df_long <- df_long %>% 
-  ##### FIX THIS!!!
-  left_join(md_cat_new, by=c("Sample"="ID"))
-
-md_cat_new$ID
+  left_join(md_cat_new, by=c("Sample"="ID")) %>% 
+  select(GENE, Sample, `Gene count`, reads, Cohort )
 
 # 2. Define cohorts
-df_long <- df_long %>%
-  mutate(Cohort = if_else(str_detect(Sample, "PRIMAL|Replicates"), "PRIMAL", Cohort)) %>% 
-  mutate(Cohort_2 = if_else(str_detect(Sample, "PRIMAL|Replicates"), "PRIMAL", "US"))
+#df_long <- df_long %>%
+ # mutate(Cohort = if_else(str_detect(Sample, "PRIMAL|Replicates"), "PRIMAL", Cohort)) %>% 
+ # mutate(Cohort_2 = if_else(str_detect(Sample, "PRIMAL|Replicates"), "PRIMAL", "US"))
 
 df_long %>% 
   count(Cohort)
@@ -246,7 +258,7 @@ df_long %>%
 
 # 3. Count number of samples per gene & cohort
 gene_counts <- df_long %>%
-  filter(Presence == 1) %>%
+  filter(`Gene count` >= 1) %>%
   group_by(GENE, Cohort) %>%
   summarise(count = n(), .groups = "drop")
 
@@ -257,6 +269,47 @@ ggplot(gene_counts, aes(x = reorder(GENE, -count), y = count, fill = Cohort)) +
   labs(x = "Gene", y = "Number of samples with gene present",
        title = "Virulence genes by cohort") +
   theme_minimal()
+```
+# normalize gene count to Million reads
+```{r}
+df_new <- df_long %>%
+  mutate(reads_per_million = `Gene count` / (reads / 1e6),
+         adjusted_presence = ifelse(reads_per_million >= 1, 1, 0))
+
+
+df_new %>% 
+  ggplot(aes(x=Cohort, y=reads_per_million, fill=Cohort))+
+  geom_boxplot()+
+  scale_y_log10()+
+  theme_minimal()+
+  theme(axis.text.x=element_blank())
+
+df_new %>%
+  group_by(Cohort) %>%
+  summarise(mean_prev = mean(adjusted_presence, na.rm = TRUE),
+            se = sd(adjusted_presence, na.rm = TRUE) / sqrt(n())) %>%
+  ggplot(aes(x = Cohort, y = mean_prev, fill = Cohort)) +
+  geom_col(width = 0.6, color = "black") +
+  geom_errorbar(aes(ymin = mean_prev - se, ymax = mean_prev + se),
+                width = 0.2) +
+  scale_y_log10()+
+  #scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal(base_size = 14) +
+  labs(
+    x = "Cohort",
+    y = "Adjusted prevalence (%)",
+    fill = "Cohort"
+  )
+
+df_new%>% 
+  ggplot(aes(x = GENE, y = adjusted_presence, fill = Cohort)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme_minimal()+
+   scale_x_discrete(labels = ylabel_map)+
+   scale_fill_manual(values = cohort_colors)+
+  theme(text=element_text(size = 16), axis.text.x = element_text(angle = 45, hjust = 1, size=14), axis.text.y = element_text(size=14),legend.position = "none")+
+    labs(x = "Virulence gene category", y = expression(italic("Staphylococcus")~" virulence genes prevalence"), fill="Cohort")
 ```
 
 
