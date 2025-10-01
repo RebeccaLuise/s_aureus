@@ -97,6 +97,8 @@ present_max   = as.integer(adj_count_max >= 1),
 adj_rel   = adj_count_median / D_star
 
   )
+
+write_csv(df_std, "s_aureus_adjusted_sequencing_depth.csv")
 ```
 
 ```{r}

@@ -693,9 +693,9 @@ ggplot(aes(x = x_key, fill = study_short)) +
   facet_grid(~ Timepoint, scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
   labs(
-    title = "Depth-standardized virulence gene prevalence ",
-    subtitle = "Bars show prevalence at median seq depth D* = 34.2 Mio",
-    y = "Virulence gene prevalence (%)", x = "", fill = "Study"
+    #title = "Depth-standardized virulence gene prevalence ",
+    #subtitle = "Bars show prevalence at median seq depth D* = 34.2 Mio",
+    y = "Virulence gene prevalence", x = "", fill = "Study"
   ) +
   theme_minimal(base_size = 14) +
   theme(strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
@@ -705,12 +705,14 @@ ggplot(aes(x = x_key, fill = study_short)) +
         title = ggtext::element_markdown(),
         panel.spacing = unit(1, "lines")) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
+
+ggsave("virulence_gene_prevalence_depth_stand.pdf", width = 8, height = 5)
 ```
 
 
 # subset to S_aureus positive samples only
 here I will count S_aureus pos if at least 1 mOTU at actual sequencing depth for S.aureues was detected
-```{r}
+```{r, eval=F}
 aureus_df <- readRDS("../S.aureus_only_dataframe.rds")
 
 aureus_df <-aureus_df %>% 
@@ -719,14 +721,31 @@ aureus_df <-aureus_df %>%
 s_aureus_pos <- df_std %>% 
   left_join(aureus_df %>% select(sample_alias, s_aureus_pos), by="sample_alias") %>% 
   filter(s_aureus_pos==T)
+```
 
+# s_aureus detection based on median seq depth
+```{r}
+s_aureus_adj <- read_delim("s_aureus_adjusted_sequencing_depth.csv")
+
+s_aureus_adj <- s_aureus_adj %>% 
+  mutate(s_aureus_pos = case_when(present_median>=1~T, T~F))
+
+df_std <- df_std %>% 
+  left_join(s_aureus_adj%>% select(sample_alias, s_aureus_pos), by="sample_alias") 
+```
+
+
+```{r}
 # ---- 3) Make a cleaned dataframe with binary presence cols ----
-df_clean <- s_aureus_pos %>%
+df_clean <- df_std %>%
   mutate(across(all_of(presence_cols), to_bin))
+
+df_aureus <- df_std %>% 
+  filter(s_aureus_pos==T)
 
 # ---- 4) Per-sample collapse: "any gene present (TRUE/FALSE/NA)" per depth ----
 #    NA means: this sample had no non-missing gene rows for that depth
-per_sample_any <- df_clean %>%
+per_sample_any <- df_aureus %>%
   group_by(sample_alias, study, Timepoint) %>%
   summarise(
     any_actual  = ifelse(sum(!is.na(present_actual)) == 0, NA, sum(present_actual == 1, na.rm = TRUE) >= 1),
@@ -798,9 +817,9 @@ ggplot(aes(x = x_key, fill = study_short)) +
   facet_grid(~ Timepoint, scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
   labs(
-    title = "Depth-standardized virulence gene prevalence in *S.aureus* pos. samples",
-    subtitle = "Bars show prevalence at median seq depth D* = 34.2 Mio",
-    y = "Virulence gene prevalence (%)", x = "", fill = "Study"
+   # title = "Depth-standardized virulence gene prevalence in *S.aureus* pos. samples",
+   # subtitle = "Bars show prevalence at median seq depth D* = 34.2 Mio",
+    y = "*Staphylococcus* VG prevalence", x = "", fill = "Study"
   ) +
   theme_minimal(base_size = 14) +
   theme(strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
@@ -808,11 +827,468 @@ ggplot(aes(x = x_key, fill = study_short)) +
         axis.text.x = element_text(angle = 45, hjust = 1),
         axis.title.y = ggtext::element_markdown(),
         title = ggtext::element_markdown(),
-        panel.spacing = unit(1, "lines")) +
-  guides(fill = guide_legend(nrow = 1, position = "bottom"))
+        panel.spacing = unit(1, "lines"), legend.position = "none") #+
+  #guides(fill = guide_legend(nrow = 1, position = "none"))
+
+ggsave("virulence_gene_prevalence_depth_stand_s_aureus_pos.pdf", width = 7, height = 4.5)
+```
+# Heatmap for all virulence gene pos samples at median seq depth
+
+```{r}
+library(tidyverse)
+library(pheatmap)
+library(RColorBrewer)
+
+# 1) Ensure present_median is binary numeric (0/1) or NA
+#    Choose whether you want to treat NA as 0 (unobserved -> absent) or keep NA to show as special color.
+#    Here I'll fill NAs with 0 (comment the values_fill line below if you prefer NA)
+df_clean <- df_clean %>%
+  mutate(
+    present_median = case_when(
+      is.na(present_median) ~ 0L,            # <- use 0 for NA; change to NA_integer_ if you want NA kept
+      present_median %in% c(TRUE, "TRUE", 1) ~ 1L,
+      TRUE ~ 0L
+    )
+  )
+
+# 2) Pivot to OTU x Sample, filling NAs with 0 so matrix is numeric
+heatmap_df_sample <- df_clean %>%
+  select(OTU, Sample, present_median) %>%
+  pivot_wider(names_from = Sample, values_from = present_median, values_fill = list(present_median = 0))
+
+# 3) Make matrix and ensure numeric
+heatmap_mat <- as.matrix(heatmap_df_sample %>% select(-OTU))
+rownames(heatmap_mat) <- heatmap_df_sample$OTU
+mode(heatmap_mat) <- "numeric"   # force numeric mode (safe)
+
+# 4) Optionally drop samples or OTUs with all zeros to declutter
+#    (you had code selecting columns where sum > 0; here we do both rows and cols)
+heatmap_mat <- heatmap_mat[rowSums(heatmap_mat, na.rm = TRUE) > 0, , drop = FALSE]
+heatmap_mat <- heatmap_mat[, colSums(heatmap_mat, na.rm = TRUE) > 0, drop = FALSE]
+
+# 5) Prepare metadata (columns) - ensure rownames match matrix colnames and in same order
+metadata_df <- df_clean %>%
+  select(study, Sample, Timepoint, s_aureus_pos) %>%
+  distinct(Sample, .keep_all = TRUE) %>%
+  column_to_rownames("Sample")
+
+# Subset + reorder to exactly match heatmap columns
+metadata_df <- metadata_df[colnames(heatmap_mat), , drop = FALSE]
+
+cohort_colors <-  c("PRIMAL"= "#88C9BF", "Gibson"= "#BDBDBD", "Rahman" ="#969696",
+                    "Gasparrini"=  "#636363", "Pärnanen"="#4D4D4D","Morrow"= "#D9D9D9")
+
+# Rename / factor levels for annotation consistency
+metadata_df <- metadata_df %>%
+  rename(`Postnatal age` = Timepoint) %>%
+  mutate(
+    study_short = ifelse(study %in% names(short_map),
+                         short_map[as.character(study)],
+                         as.character(study)),
+    Cohort = factor(study_short, levels = names(cohort_colors)),   # keep same order
+    `Postnatal age` = factor(`Postnatal age`, levels = c("DOL 1-8","DOL 9-42","DOL 43-455")),
+    `S. aureus pos.` = factor(as.character(s_aureus_pos), levels = c("FALSE","TRUE"))
+  )
+
+
+metadata_df$study <- NULL
+metadata_df$study_short <- NULL
+metadata_df$s_aureus_pos<- NULL
+
+# 6) Row annotation: only keep OTUs present in the heatmap_mat
+row_anno <- df_clean %>%
+  select(OTU, Category) %>%
+  distinct() %>%
+  filter(OTU %in% rownames(heatmap_mat)) %>%
+  column_to_rownames("OTU") %>%
+  rename(`Gene category` = Category)
+
+# Build colors for gene categories with stable mapping to levels present
+unique_cats <- sort(unique(row_anno$`Gene category`))
+n_cat <- length(unique_cats)
+vfdb_palette <- colorRampPalette(brewer.pal(12, "Set3"))(n_cat)
+row_colors <- list(`Gene category` = setNames(vfdb_palette, unique_cats))
+
+# 7) Annotation column colors (your existing definitions)
+
+annotation_colors <- list(
+  Cohort = cohort_colors,
+  `Postnatal age` = c("DOL 1-8" = "lightblue", "DOL 9-42" = "darkblue", "DOL 43-455" = "purple"),
+  `S. aureus pos.` = c("FALSE" = "black", "TRUE" = "pink")
+)
+
+all_colors <- c(annotation_colors, row_colors)
+
+# 1) Make summary labels with N
+cohort_counts <- table(metadata_df$study_short)
+cohort_labels <- paste0(names(cohort_counts), ", N=", cohort_counts)
+
+sapos_counts <- table(metadata_df$s_aureus_pos)
+sapos_labels <- paste0(names(sapos_counts), ", N=", sapos_counts)
+
+# 8) Finally, draw the heatmap.
+#    If you kept NAs (did NOT fill them with 0), pass na_col to show them e.g. grey.
+hm <- pheatmap(
+  heatmap_mat,
+  color = c("lightgrey", "#55998A"),          # binary color for 0/1
+  breaks = c(-0.5, 0.5, 1.5),                 # maps 0->first color, 1->second color
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  border_color = NA,
+  angle_col = 45,
+  fontsize_row = 8,
+  fontsize_col = 8,
+  show_colnames = FALSE,
+  annotation_col = metadata_df,
+  annotation_row = row_anno,
+  annotation_colors = all_colors,
+  legend_breaks = c(0, 1),
+  legend_labels = c("Absent", "Present"),
+  na_col = "grey90"   # only used if you kept NA values instead of turning them to 0
+)
+
+# Save to PDF
+pdf("heatmap_absence_presence_virulence_genes_medianSeqDepth.pdf", height = 12, width = 14)
+grid::grid.draw(hm$gtable)  # draw the heatmap grob
+dev.off()
+```
+# Heatmap for S.aureus pos samples at median seq depth prevalence
+
+```{r}
+
+
+# 1) Ensure present_median is binary numeric (0/1) or NA
+#    Choose whether you want to treat NA as 0 (unobserved -> absent) or keep NA to show as special color.
+#    Here I'll fill NAs with 0 (comment the values_fill line below if you prefer NA)
+df_clean <- df_clean %>%
+  mutate(
+    present_median = case_when(
+      is.na(present_median) ~ 0L,            # <- use 0 for NA; change to NA_integer_ if you want NA kept
+      present_median %in% c(TRUE, "TRUE", 1) ~ 1L,
+      TRUE ~ 0L
+    )
+  )
+
+# 2) Pivot to OTU x Sample, filling NAs with 0 so matrix is numeric
+heatmap_df_sample <- df_clean %>%
+  filter(s_aureus_pos==T) %>% 
+  select(OTU, Sample, present_median) %>%
+  pivot_wider(names_from = Sample, values_from = present_median, values_fill = list(present_median = 0))
+
+# 3) Make matrix and ensure numeric
+heatmap_mat <- as.matrix(heatmap_df_sample %>% select(-OTU))
+rownames(heatmap_mat) <- heatmap_df_sample$OTU
+mode(heatmap_mat) <- "numeric"   # force numeric mode (safe)
+
+# 4) Optionally drop samples or OTUs with all zeros to declutter
+#    (you had code selecting columns where sum > 0; here we do both rows and cols)
+heatmap_mat <- heatmap_mat[rowSums(heatmap_mat, na.rm = TRUE) > 0, , drop = FALSE]
+heatmap_mat <- heatmap_mat[, colSums(heatmap_mat, na.rm = TRUE) > 0, drop = FALSE]
+
+# 5) Prepare metadata (columns) - ensure rownames match matrix colnames and in same order
+metadata_df <- df_clean %>%
+  filter(s_aureus_pos==T) %>% 
+  select(study, Sample, Timepoint) %>%
+  distinct(Sample, .keep_all = TRUE) %>%
+  column_to_rownames("Sample")
+
+# Subset + reorder to exactly match heatmap columns
+metadata_df <- metadata_df[colnames(heatmap_mat), , drop = FALSE]
+
+cohort_colors <-  c("PRIMAL"= "#88C9BF", "Gibson"= "#BDBDBD", "Rahman" ="#969696",
+                    "Gasparrini"=  "#636363", "Pärnanen"="#4D4D4D","Morrow"= "#D9D9D9")
+
+# Rename / factor levels for annotation consistency
+metadata_df <- metadata_df %>%
+  rename(`Postnatal age` = Timepoint) %>%
+  mutate(
+    study_short = ifelse(study %in% names(short_map),
+                         short_map[as.character(study)],
+                         as.character(study)),
+    Cohort = factor(study_short, levels = names(cohort_colors)),   # keep same order
+    `Postnatal age` = factor(`Postnatal age`, levels = c("DOL 1-8","DOL 9-42","DOL 43-455"))
+  )
+
+# 1) Make summary labels with N
+cohort_counts <- table(metadata_df$study_short)
+cohort_labels <- paste0(names(cohort_counts), ", N=", cohort_counts)
+
+sapos_counts <- table(metadata_df$s_aureus_pos)
+sapos_labels <- paste0(names(sapos_counts), ", N=", sapos_counts)
+
+
+metadata_df$study <- NULL
+metadata_df$study_short <- NULL
+metadata_df$s_aureus_pos<- NULL
+
+# 6) Row annotation: only keep OTUs present in the heatmap_mat
+row_anno <- df_clean %>%
+  select(OTU, Category) %>%
+  distinct() %>%
+  filter(OTU %in% rownames(heatmap_mat)) %>%
+  column_to_rownames("OTU") %>%
+  rename(`Gene category` = Category)
+
+# Build colors for gene categories with stable mapping to levels present
+unique_cats <- sort(unique(row_anno$`Gene category`))
+n_cat <- length(unique_cats)
+vfdb_palette <- colorRampPalette(brewer.pal(12, "Set3"))(n_cat)
+row_colors <- list(`Gene category` = setNames(vfdb_palette, unique_cats))
+
+# 7) Annotation column colors (your existing definitions)
+
+annotation_colors <- list(
+  Cohort = cohort_colors,
+  `Postnatal age` = c("DOL 1-8" = "lightblue", "DOL 9-42" = "darkblue", "DOL 43-455" = "purple"),
+  `S. aureus pos.` = c("FALSE" = "black", "TRUE" = "pink")
+)
+
+all_colors <- c(annotation_colors, row_colors)
+
+
+# 8) Finally, draw the heatmap.
+#    If you kept NAs (did NOT fill them with 0), pass na_col to show them e.g. grey.
+hm <- pheatmap(
+  heatmap_mat,
+  color = c("lightgrey", "#55998A"),          # binary color for 0/1
+  breaks = c(-0.5, 0.5, 1.5),                 # maps 0->first color, 1->second color
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  border_color = NA,
+  angle_col = 45,
+  fontsize_row = 8,
+  fontsize_col = 8,
+  show_colnames = FALSE,
+  annotation_col = metadata_df,
+  annotation_row = row_anno,
+  annotation_colors = all_colors,
+  legend_breaks = c(0, 1),
+  legend_labels = c("Absent", "Present"),
+  na_col = "grey90"   # only used if you kept NA values instead of turning them to 0
+)
+
+# Save to PDF
+pdf("heatmap_absence_presence_virulence_genes_medianSeqDepth_sAureusPos.pdf", height = 12, width = 14)
+grid::grid.draw(hm$gtable)  # draw the heatmap grob
+dev.off()
+```
+
+# calculate virulence gene load = total sum of genes carried per sample = richness
+```{r, fig.height=7, fig.width=8}
+df_with_richness <- df_std%>%
+  filter(s_aureus_pos==T) %>% 
+  group_by(Sample) %>%
+  mutate(gene_richness = sum(present_median, na.rm = TRUE)) %>%
+  ungroup() %>% 
+  distinct(Sample, .keep_all = T)
+
+n_by_group <-  df_with_richness %>% count(study, Timepoint)
+
+df_with_richness <- df_with_richness %>% 
+  left_join(n_by_group, by = c("study","Timepoint")) %>%
+  mutate(
+    study_short = ifelse(study %in% names(short_map),
+                         short_map[as.character(study)],
+                         as.character(study)),
+    Timepoint = factor(Timepoint, levels = time_levels),
+    study_short = factor(study_short, levels = study_order),
+    x_label = paste0(as.character(study_short), ", N=", n),
+    x_key   = paste(Timepoint, x_label, sep = "|")
+  ) %>%
+  group_by(Timepoint) %>%
+  arrange(study_short, .by_group = TRUE) %>%
+  ungroup()
+
+levels <- df_with_richness %>%
+ arrange(Timepoint, study_short) %>%
+  pull(x_key) %>% unique()
+
+df_with_richness <- df_with_richness %>%
+  mutate(x_key = factor(x_key, levels = levels))
+
+hline_data <- df_with_richness %>%
+  group_by(Timepoint) %>%
+  summarise(hline_y = median(gene_richness, na.rm = TRUE), .groups = "drop")
+
+present <- union(unique(as.character(df_with_richness$study_short)),
+                 unique(as.character(df_with_richness$study_short)))
+legend_order <- study_order[study_order %in% present]
+fill_palette <- fill_palette[legend_order]
+
+library(ggsignif)
+
+anno_df <- data.frame(
+  Timepoint = "DOL 9-42",   
+  xmin = c("DOL 9-42|PRIMAL, N=151", "DOL 9-42|PRIMAL, N=151"),
+  xmax = c("DOL 9-42|Rahman, N=30", "DOL 9-42|Gibson, N=53"),
+  annotations = c("FDR = 0.04", "FDR = 0.05"),
+  y_position = c(2, 2.2)
+)
+
+df_with_richness <- df_with_richness %>%
+  mutate(Timepoint = factor(Timepoint,
+                            levels = c("DOL 1-8", "DOL 9-42", "DOL 43-455")))
+
+anno_df <- anno_df %>%
+  mutate(Timepoint = factor(Timepoint,
+                            levels = c("DOL 1-8", "DOL 9-42", "DOL 43-455")))
+
+
+df_with_richness %>% 
+  ggplot(aes(x = x_key, y = gene_richness, fill = study_short)) +
+  geom_boxplot() +
+  scale_y_log10(breaks = c(1, 10, 30, 100, 300),
+                labels = c("1", "10", "30", "100", "300"))+
+  scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
+  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
+  labs(y = "*Staphylococcus* VG richness", x = "", fill = "Study") +
+  geom_signif(
+    data = anno_df,
+    manual = TRUE,
+    inherit.aes = FALSE,
+    aes(xmin = xmin, xmax = xmax, annotations = annotations, y_position = y_position)
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
+        strip.text = element_text(face = "bold", size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.y = ggtext::element_markdown(),
+        panel.spacing = unit(1, "lines"), legend.position = "none") #+
+  #guides(fill = guide_legend(nrow = 1, position = "bottom"))
+
+ggsave("virulence_richness_boxplot.pdf", height = 5, width = 7)
+```
+
+```{r}
+test_results <- df_with_richness%>%
+  group_by(Timepoint) %>%
+  do(
+    broom.mixed::tidy(
+      lm(gene_richness ~ study_short,
+                       data = .))) %>%
+  mutate(
+    fdr = p.adjust(p.value, method = "BH"),
+    fdr = round(fdr, digits = 5),
+    significance = case_when(
+      fdr > 0.1 ~ "ns",
+      fdr < 0.001 ~ "***",
+      fdr < 0.01 ~ "**",
+      fdr < 0.05 ~ "*",
+      fdr < 0.1 ~ "'"
+    )
+  )
+
 ```
 
 
+# calculate prevalence per gene category
+## only S. aureus positive samples
+```{r}
+category_prev_aureus <- df_aureus %>%
+  
+  # first calculate N per cohort
+  group_by(study) %>%
+  mutate(n_samples = n_distinct(Sample)) %>%
+  ungroup() %>%
+  
+  # then summarise prevalence per category
+  group_by(Category,study,  n_samples) %>%
+  summarise(prevalence = sum(present_median > 0, na.rm = TRUE) / n(), prev_q1=sum(present_1stQ>0, na.rm = TRUE) / n(), prev_q3=sum(present_3rdQ>0, na.rm = TRUE) / n(), .groups = "drop" ) %>%  
+ # summarise(prevalence = mean(present_median, na.rm = TRUE), prev_q1 =mean(present_1stQ, na.rm=TRUE),prev_q3 =mean(present_3rdQ, na.rm=TRUE), .groups = "drop") %>%
+  
+  # shorten cohort names + create label
+  mutate(
+    Cohort_short = str_split(study, "_") %>% map_chr(1),
+    x_label = paste0(Cohort_short, ", N=", n_samples)
+  )
 
+x_label_levels <- c( "PRIMAL, N=174" , "Gibson, N=105" , "Rahman, N=47" , "Gasparrini, N=48", "Morrow, N=11", "Parnanen, N=8" )
 
+cohort_colors <-  c("PRIMAL, N=174"= "#88C9BF", "Morrow, N=11"= "#D9D9D9", "Gibson, N=105"= "#BDBDBD", "Rahman, N=47" ="#969696","Gasparrini, N=48"=  "#636363", "Parnanen, N=8"="#4D4D4D")
+
+category_prev_aureus$x_label <- factor(category_prev_aureus$x_label, levels = x_label_levels)
+
+summary(as_factor(category_prev_aureus$Category))
+ylabel_map <- c(
+  "Adherence" = "Adherence",
+  "Biofilm" = "Biofilm",
+  "Effector delivery system" = "Effector delivery\nsystem",
+  "Exoenzyme" = "Exoenzyme",
+  "Exotoxin" = "Exotoxin",
+  "Immune modulation" = "Immune modulation",
+  "Nutritional/Metabolic factor" = "Nutritional/Metabolic\nfactor"
+)
+
+dodge_width <- 0.9  # adjust if needed
+
+category_prev_aureus %>% 
+  ggplot(aes(x = reorder(Category, -prevalence), y = prevalence, fill = x_label)) +
+  geom_col(position = position_dodge(width = dodge_width)) +
+  geom_errorbar(
+    aes(ymin = prev_q1, ymax = prev_q3),
+    width = 0.2,
+    colour = "black",
+    position = position_dodge(width = dodge_width)  # align errorbars with bars
+  ) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_x_discrete(labels = ylabel_map) +
+  scale_fill_manual(values = cohort_colors) +
+  theme_minimal() +
+  theme(
+    text = element_text(size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+    axis.text.y = element_text(size = 14),
+    legend.position = "none"
+  ) +
+  labs(
+    x = "Virulence gene category",
+    y = expression(italic("Staphylococcus")~" VG prevalence"),
+    fill = "Cohort"
+  )
+
+ggsave("virulence_categories_med_seq_depth.pdf", width = 8, height = 5)
 ```
+
+## run glm on S.aureus pos. samples and virulence gene categories across samples
+```{r}
+
+test_df <- df_aureus %>% 
+  mutate(Cohort_short = str_split(study, "_") %>% map_chr(1))
+
+test_df$Cohort_short <- factor(test_df$Cohort_short, levels=c("PRIMAL","Gibson","Rahman",  "Gasparrini",  "Morrow", "Parnanen"))
+
+which(is.na(test_df$subject_id)==T)
+
+test_results_cat <-test_df %>%
+  group_by(Category) %>%
+  do(
+    broom.mixed::tidy(
+      glmmTMB::glmmTMB(present_median ~ Cohort_short + (1 | subject_id),
+                       data = ., family = binomial),
+      effects = "fixed",
+      conf.int = TRUE,    # get CI directly
+      conf.method = "Wald"
+    )
+  ) %>%
+  ungroup() %>%
+  mutate(
+    OR = exp(estimate),
+    OR_low = exp(conf.low),
+    OR_high = exp(conf.high),
+    fdr = p.adjust(p.value, method = "BH"),
+    fdr = round(fdr, digits = 5),
+    significance = case_when(
+      fdr > 0.05 ~ "ns",
+      fdr < 0.001 ~ "***",
+      fdr < 0.01 ~ "**",
+      fdr < 0.05 ~ "*"
+    )
+  )
+
+write_csv(test_results_cat, "glmm_results_virulence_gene_categories_across_cohorts.csv")
+
+test_results_cat %>% 
+  filter(term!="(Intercept)")
+```
+none of the categories differ significantly against PRIMAL at median sequencing depth
