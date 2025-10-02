@@ -16,6 +16,16 @@ library(tidyverse)
 library(phyloseq)
 ```
 
+```{r}
+cohort_colors <- c(
+  "PRIMAL"     = "#88C9BF",
+  "Gibson"     = "#D9D9D9",
+  "Rahman"     = "#BDBDBD",
+  "Gasparrini" = "#969696",
+  "Morrow"     = "#636363",
+  "Pärnanen"   = "#4D4D4D"
+)
+```
 
 ## load data 
 ```{r}
@@ -270,6 +280,43 @@ ggplot(gene_counts, aes(x = reorder(GENE, -count), y = count, fill = Cohort)) +
        title = "Virulence genes by cohort") +
   theme_minimal()
 ```
+# build a phyloseq
+```{r}
+vfdb_full
+
+otu_ps <- vfdb_full %>% 
+  select(GENE, 4:1778) 
+otu_ps <- data.frame(otu_ps)
+
+rownames(otu_ps) <- NULL
+
+otu_ps <- otu_ps %>% 
+  column_to_rownames("GENE")
+
+otu_ps <-  otu_table(otu_ps,taxa_are_rows = T)
+
+# tax table
+tax <- vfdb_full %>% 
+  select(GENE,Category, VF_short, VF_long)
+
+tax <- data.frame(tax)
+rownames(tax) <- NULL
+tax <- tax %>% 
+  column_to_rownames("GENE")
+
+tax <- as.matrix(tax)
+tax <- tax_table(tax)
+
+# meta data
+sam_data <- md_cat_new %>% 
+  column_to_rownames("ID")
+sam_data <- sample_data(sam_data)
+
+ps <- phyloseq(tax, otu_ps, sam_data)
+
+write_rds(ps, "vfdb_phyloseq.rds")
+```
+
 # normalize gene count to Million reads
 ```{r}
 df_new <- df_long %>%
@@ -306,7 +353,7 @@ df_new%>%
   geom_col(position = "dodge") +
   scale_y_continuous(labels = scales::percent_format()) +
   theme_minimal()+
-   scale_x_discrete(labels = ylabel_map)+
+   #scale_x_discrete(labels = ylabel_map)+
    scale_fill_manual(values = cohort_colors)+
   theme(text=element_text(size = 16), axis.text.x = element_text(angle = 45, hjust = 1, size=14), axis.text.y = element_text(size=14),legend.position = "none")+
     labs(x = "Virulence gene category", y = expression(italic("Staphylococcus")~" virulence genes prevalence"), fill="Cohort")
@@ -1106,7 +1153,6 @@ test_results <-test_df %>%
   )
 
 write_csv(test_results, "glmm_results_virulence_gene_categories_across_cohorts.csv")
-
 
 
 ```

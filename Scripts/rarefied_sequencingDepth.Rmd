@@ -29,7 +29,10 @@ sample_sums(ps) %>% summary()
 otu_table(ps)
 colSums(otu_table(ps))%>% summary()
 hist(colSums(otu_table(ps)), breaks = 1000)
+```
 
+
+```{r}
 # Step 1: pick rarefaction depth (e.g., 10k or min depth where >90% samples survive)
 raref_depth <- 1284
 
@@ -66,6 +69,7 @@ ggplot(prev_summary, aes(x = "S. aureus", y = median)) +
   xlab("") +
   theme_minimal()
 ```
+
 ```{r}
 library(phyloseq)
 library(dplyr)
@@ -133,7 +137,7 @@ prev_df <- lapply(seq_along(rarefied_list), function(i) {
     mutate(iter = i)
 }) %>% bind_rows()
 
-#write_csv(prev_df, "rarefied_median_seq_depth_prevalence.csv")
+write_csv(prev_df, "rarefied_1q_seq_depth_prevalence.csv")
 
 # Step 5: summarise per Study x Timepoint across iterations
 prev_summary <- prev_df %>%
@@ -252,5 +256,95 @@ ggplot(aes(x = x_key, y = median, fill = study_short)) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
 ggsave("rarefied_S_aureus_prevalence.pdf", width = 8, height = 5)
+```
+
+#repeat rarefaction at median seq depth
+```{r}
+# Step 1: pick a rarefaction depth
+
+raref_depth <- 6143 # median sequencing depth distribution
+n_iter <- 100         # number of rarefaction replicates
+
+# Step 2: rarefy multiple times
+set.seed(123)
+rarefied_list <- replicate(
+  n_iter,
+  rarefy_even_depth(ps, sample.size = raref_depth, verbose = FALSE, replace = FALSE),
+  simplify = FALSE
+)
+
+# Step 3: function to compute prevalence per Study x Timepoint
+get_prev_summary <- function(ps_obj) {
+  # Extract metadata
+  meta <- as.data.frame(sample_data(ps_obj))
+  
+  # Extract S. aureus counts
+  # Find all taxa with "aureus" in the mOTU column
+aureus_taxa <- taxa_names(ps_obj)[
+  grepl("aureus", tax_table(ps_obj)[, "mOTU"], ignore.case = TRUE)
+]
+
+# Safety check: stop if none found
+if (length(aureus_taxa) == 0) {
+  stop("No taxa containing 'aureus' found in mOTU column.")
+}
+
+otu <- otu_table(ps_obj)
+
+# Extract counts for all matching taxa and sum them per sample
+if (taxa_are_rows(ps_obj)) {
+  sa_counts <- colSums(otu[aureus_taxa, , drop = FALSE])
+} else {
+  sa_counts <- rowSums(otu[, aureus_taxa, drop = FALSE])
+}
+  
+meta <- as.data.frame(sample_data(ps_obj))
+
+  # Ensure length matches metadata rows
+  stopifnot(length(sa_counts) == nrow(meta))
+  
+  # Add presence/absence to metadata
+  meta$sa_present <- as.integer(sa_counts > 0)
+  
+  meta %>%
+    group_by(study_id, timepoint_category) %>%
+    summarise(prevalence = mean(sa_present), N = n(),  .groups = "drop") 
+    
+}
+
+# Step 4: collect prevalence estimates across iterations
+prev_df <- lapply(seq_along(rarefied_list), function(i) {
+  get_prev_summary(rarefied_list[[i]]) %>%
+    mutate(iter = i)
+}) %>% bind_rows()
+
+write_csv(prev_df, "rarefied_median_seq_depth_prevalence.csv")
+
+# Step 5: summarise per Study x Timepoint across iterations
+prev_summary <- prev_df %>%
+  group_by(study_id, timepoint_category) %>%
+  summarise(N=N,
+    median = median(prevalence),
+    q25 = quantile(prevalence, 0.25),
+    q75 = quantile(prevalence, 0.75),
+    min = min(prevalence),
+    max = max(prevalence),
+    .groups = "drop"
+  )
+
+prev_df %>% 
+group_by(timepoint_category) %>%
+  summarise(prevalence_median = median(prevalence, na.rm = TRUE)*100, .groups = "drop")
+
+prev_df %>% 
+group_by(timepoint_category) %>%
+  count()
+
+summary(as_factor(sample_data(rarefied_list[[1]])$timepoint_category))
+summary(as_factor(sample_data(rarefied_list[[1]])$study_id))
+table(
+  sample_data(rarefied_list[[1]])$timepoint_category,
+  sample_data(rarefied_list[[1]])$study_id
+)
 ```
 

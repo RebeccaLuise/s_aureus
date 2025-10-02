@@ -26,7 +26,7 @@ psmelt_genus <- readRDS( "/Users/rebecca/Documents/Forschung/S_aureus_letter/r_a
 
 ```{r}
 df <- psmelt_genus %>% 
-  select(Sample, Abundance, total_reads, reads, study_id, timepoint_category, subject_id)
+  select(Sample, Abundance, total_reads, reads, study_id, timepoint_category, subject_id, sample_alias)
 
 which(is.na(df$subject_id))
 
@@ -724,7 +724,7 @@ fill_palette <- fill_palette[legend_order]
 
 
 ```
-
+# final prevalence plot
 ```{r}
 # Collapse presence variables into long format for easier plotting
 prev_by_study_tp <- df_std %>%
@@ -769,36 +769,77 @@ levels_prev <- prev_summary%>%
 prev_summary <- prev_summary %>%
   mutate(x_key = factor(x_key, levels = levels_prev))
 
-ggplot(prev_summary, aes(x = x_key, fill = study_short)) +
-  # error bar from min to max
-  geom_errorbar(aes(ymin = min*100, ymax = max*100), width = 0.2, colour = "black") +
+hline_data_prev <- prev_summary%>%
+  group_by(Timepoint) %>%
+  summarise(medSeqDepth_prev = median(median, na.rm = TRUE)*100, q1Depth_prev = median(prev_1stQ, na.rm = TRUE)*100, q3Depth_prev = median(prev_3rdQ, na.rm = TRUE)*100, .groups = "drop")
+
+p1 <- ggplot(prev_summary, aes(x = x_key, fill = study_short)) +
   # bar at median
   geom_col(aes(y = median*100), alpha = 0.7, width = 0.6) +
-  # Q1 and Q3 ticks
-  geom_point(aes(y = q1*100), shape = 95, size = 6, colour = "black") +
-  geom_point(aes(y = q3*100), shape = 95, size = 6, colour = "black") +
+  # error bar from min to max
+  geom_errorbar(aes(ymin = q1*100, ymax =q3*100), width = 0.2, colour = "black") +
   #scale_y_continuous(labels = scales::percent_format()) +
   scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
   facet_grid(~ Timepoint, scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
   labs(
-    title = "Depth-standardized *S. aureus* prevalence",
-    subtitle = "Bars show prevalence at median seq depth D* = 34.2 Mio",
-    y = "*S. aureus* prevalence (%)", x = "", fill = "Study"
+    #title = "Meta analysis",
+    #subtitle = "Bars show prevalence at median seq depth D* = 34.2 Mio",
+    y = "Depth-adj. *S. aureus* prevalence (%)", x = "", fill = "Study"
   ) +
+  geom_hline(data = hline_data_prev, aes(yintercept = medSeqDepth_prev),
+             colour = "black", linetype = 2, inherit.aes = FALSE) +
   theme_minimal(base_size = 14) +
   theme(strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
         strip.text = element_text(face = "bold", size = 14),
         axis.text.x = element_text(angle = 45, hjust = 1),
         axis.title.y = ggtext::element_markdown(),
         title = ggtext::element_markdown(),
-        panel.spacing = unit(1, "lines")) +
-  guides(fill = guide_legend(nrow = 1, position = "bottom"))
+        panel.spacing = unit(1, "lines"), legend.position = "none") #+
+ # guides(fill = guide_legend(nrow = 1, position = ""))
+p1
+#ggsave("prevalence_depth_standardized_s_aureus.pdf", height = 5, width = 8)
+saveRDS(p1, "depth_standardized_S.aureus_prevalence.rds")
+```
+# compare prevalences across seq Depth to rarefied
+```{r}
+# compare prevalences across seq Depth to rarefied
 
-ggsave("prevalence_depth_standardized_s_aureus.pdf", height = 5, width = 8)
+rare <- read_delim("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/rarefied_q1_seq_depth_prevalence.csv")
+
+rare %>% 
+  group_by(timepoint_category) %>%
+  summarise(prevalence_median = median(prevalence, na.rm = TRUE)*100, .groups = "drop")
+
+rare %>% 
+  group_by(timepoint_category) %>%
+  count()
+
+df_r_d <- data.frame(
+  Timepoint = c("DOL 1-8", "DOL 9-42", "DOL 43-455",
+                "DOL 1-8", "DOL 9-42", "DOL 43-455"),
+  stan_Depth_prev = c(9.485816, 18.832237, 12.982273, 17.14539, 23.02632, 14.14286),
+  
+  rar_prev = c(11.82796,21.875,12.5,16.66667,16.94915,17.02128),
+  Depth = c("q1","q1","q1", "median","median","median")
+)
+
+df_r_d%>%
+  filter(Depth=="q1") %>% 
+  ggplot(aes(x = rar_prev, 
+                    y = stan_Depth_prev)) +
+  geom_point(aes(shape = Depth, color = Timepoint), size = 3) +
+  geom_smooth(method = "lm", se=FALSE, color = "black") +
+  labs(y = "Standardized sequencing depth",
+       x = "Rarefied sequencing depth",
+       title = "Correlation of sequencing depth estimates for S.aureus prevalence") +
+  theme_minimal()+
+  stat_cor()#+
+  facet_wrap(~Depth)
 
 ```
 Prevalence estimates at shallow sequencing depths underestimate biological prevalence due to reduced detection sensitivity, but the consistency across adjusted depths increases confidence that our findings are robust
+
 ```{r}
 ggplot(prev_summary, aes(x = x_key, fill = study_short)) +
   geom_col(aes(y = actual*100), alpha = 0.7, width = 0.6) +
