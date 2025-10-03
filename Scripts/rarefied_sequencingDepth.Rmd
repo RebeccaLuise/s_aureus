@@ -130,7 +130,6 @@ meta <- as.data.frame(sample_data(ps_obj))
 }
 
 
-
 # Step 4: collect prevalence estimates across iterations
 prev_df <- lapply(seq_along(rarefied_list), function(i) {
   get_prev_summary(rarefied_list[[i]]) %>%
@@ -151,6 +150,169 @@ prev_summary <- prev_df %>%
     .groups = "drop"
   )
 ```
+
+```{r}
+get_sa_depth_df <- function(ps_obj) {
+  otu <- as(otu_table(ps_obj), "matrix")
+  tax <- as.data.frame(tax_table(ps_obj))
+  
+  # find S. aureus
+  sa_idx <- grepl("aureus", tax_table(ps_obj)[, "mOTU"], ignore.case = TRUE)
+  if (!any(sa_idx)) return(NULL)
+  
+  sa_present <- colSums(otu[sa_idx, , drop = FALSE]) > 0
+  
+  meta <- data.frame(sample_data(ps_obj)) %>%
+    mutate(
+      sa_present = as.integer(sa_present),
+      Total_read_count = sample_sums(ps_obj)
+    )
+  return(meta)
+}
+
+raref_depth_df <- map_dfr(seq_along(rarefied_list), function(i) {
+  df <- get_sa_depth_df(rarefied_list[[i]])
+  if (!is.null(df)) df$iter <- i
+  df
+})
+
+library(ggpubr)
+
+ggplot(raref_depth_df, aes(x = factor(sa_present), 
+                           y = log10(Total_read_count))) +
+  geom_boxplot(outlier.shape = NA) +
+  #facet_wrap(~ iter, ncol = 10) +   # see across all rarefactions
+  stat_compare_means(method = "wilcox") +
+  labs(
+    title = "S. aureus prevalence vs sequencing depth after rarefaction",
+    x = "S. aureus Presence (0/1)",
+    y = "log10 Total read count"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+
+raref_depth_df%>%
+  filter(is.na(sa_present))
+
+raref_depth_df%>%
+  group_by(sample_alias) %>% 
+  summarise(sa_present_mean=mean(sa_present)) %>% 
+  mutate(sa_present_likely = case_when(sa_present_mean>0.5~T,sa_present_mean<0.5~F)) %>% 
+  filter(!is.na(sa_present_likely)) %>% 
+  left_join(df_std %>% select(present_actual, present_median, Total_read_count, sample_alias), by="sample_alias") %>% 
+  filter(!is.na(present_median)) %>% 
+  select(sa_present_likely, present_actual, present_median, Total_read_count) %>% 
+  rename("Q1 Rarefaction" = sa_present_likely,
+    "Median Depth Adjustment" = present_median,
+    "Prior Depth Adjustment" = present_actual
+  ) %>% 
+  pivot_longer(
+    cols = c("Median Depth Adjustment", "Prior Depth Adjustment","Q1 Rarefaction"),
+    names_to = "method", 
+    values_to = "Presence"
+  ) %>% 
+  mutate(
+    Presence = as.logical(Presence),
+    method = factor(method, levels = c(
+      "Prior Depth Adjustment",
+      "Median Depth Adjustment","Q1 Rarefaction"
+    )) # <-- order defined here
+  ) %>% 
+  ggplot(aes(x = Presence, y = Total_read_count)) +
+  geom_boxplot(outlier.shape = NA, fill = "lightgrey", alpha = 0.8) +
+  geom_jitter(alpha=0.2, width = 0.2)+
+  stat_compare_means(
+    method = "wilcox", 
+    label = "p"
+  ) +
+  scale_y_log10()+
+  facet_wrap(~ method, ncol = 3) +
+  labs(
+    x = "*S.aureus* detected",
+    y = "Total read count (log scale)",
+    title = "Effect of depth adjustment on *S.aureus* prevalence calls"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    strip.text = element_text(face = "bold", size = 12),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    title = element_markdown(),axis.title.x = element_markdown()
+    
+  )
+```
+```{r, fig.height=6, fig.width=8}
+library(dplyr)
+library(ggplot2)
+
+plot_df <- raref_depth_df %>%
+  group_by(sample_alias) %>% 
+  summarise(sa_present_mean = mean(sa_present)) %>% 
+  mutate(sa_present_likely = case_when(
+    sa_present_mean > 0.5 ~ TRUE,
+    sa_present_mean < 0.5 ~ FALSE
+  )) %>% 
+  filter(!is.na(sa_present_likely)) %>% 
+  left_join(df_std %>% 
+              select(present_actual, present_median, Total_read_count, sample_alias), 
+            by = "sample_alias") %>% 
+  filter(!is.na(present_median)) %>% 
+  select(sa_present_likely, present_actual, present_median, Total_read_count) %>% 
+  rename(
+    "Q1 Rarefaction" = sa_present_likely,
+    "Median Depth Adjustment" = present_median,
+    "Prior Depth Adjustment" = present_actual
+  ) %>% 
+  pivot_longer(
+    cols = c("Median Depth Adjustment", "Prior Depth Adjustment","Q1 Rarefaction"),
+    names_to = "method", 
+    values_to = "Presence"
+  ) %>% 
+  mutate(
+    Presence = as.logical(Presence),
+    method = factor(method, levels = c(
+      "Prior Depth Adjustment",
+      "Median Depth Adjustment","Q1 Rarefaction"
+    ))
+  )
+
+# calculate N’s per facet + presence
+n_counts <- plot_df %>%
+  group_by(method, Presence) %>%
+  summarise(N = n(), .groups = "drop") %>%
+  mutate(label = paste0(Presence, "\n(N=", N, ")"))
+
+ggplot(plot_df, aes(x = Presence, y = Total_read_count)) +
+  geom_boxplot(outlier.shape = NA, fill = "lightgrey", alpha = 0.8) +
+  geom_jitter(alpha = 0.2, width = 0.2) +
+  stat_compare_means(method = "wilcox", label = "p") +
+  stat_summary(fun = "median", geom = "point", shape = 23, size = 2, fill = "red") +
+  geom_text(
+    data = n_counts,
+    aes(x = Presence, y = min(plot_df$Total_read_count)* 0.9 , label = paste0("N=", N)),
+    inherit.aes = FALSE
+  ) +
+  scale_y_log10() +
+  facet_wrap(~ method, ncol = 3)+
+  theme_minimal(base_size = 14) +
+  theme(
+    strip.text = element_text(face = "bold", size = 12),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    title = element_markdown(),axis.title.x = element_markdown()
+     )+
+  labs(
+    x = "*S.aureus* detected",
+    y = "Total read count (log scale)"
+    #title = "Effect of depth adjustment on *S.aureus* prevalence calls"
+  )
+
+ggsave("seq_depth_normalization_comparison.pdf", height = 6, width = 8)
+
+```
+
 
 # plot
 ```{r}

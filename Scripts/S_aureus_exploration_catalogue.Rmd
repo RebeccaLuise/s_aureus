@@ -713,7 +713,7 @@ aureus_df <- aureus_df %>%
 # Calculate medians per facet (timepoint_category)
 hline_data_relab <- aureus_df%>%
   group_by(timepoint_category) %>%
-  summarise(hline_y = round(mean(rel_ab*100, na.rm = TRUE), digits = 2))
+  summarise(hline_y = round(mean(rel_ab*100, na.rm = TRUE), digits = 5))
 hline_data_relab$timepoint_category <- factor(hline_data_relab$timepoint_category, 
                                               levels = c("DOL 1-8", "DOL 9-42", "DOL 43-455"))
 
@@ -725,8 +725,8 @@ library(scales)
 p5 <- ggplot(aureus_df, aes(x = x_label, y = rel_ab* 100, fill = study_short)) +
   geom_boxplot(outlier.shape = NA, width = 0.6) +
   scale_y_log10(
-    breaks = c(0.01, 0.1, 1, 10, 100),  # breaks at 0.1%, 1%, 10%, 100%
-    labels = label_percent(scale = 1, accuracy = 0.01)  # format as %
+    breaks = c(0.01, 0.1, 1, 10, 100), # breaks at 0.1%, 1%, 10%, 100%
+    labels = c("0.01", "0.1", "1", "10", "100")  # format as %
   ) +
   scale_fill_manual(values = c("#88C9BF", "#D9D9D9", "#BDBDBD", "#969696", "#636363", "#4D4D4D")) +
   facet_grid(~timepoint_category, scales = "free_x", space = "free") +
@@ -798,6 +798,13 @@ krinko_o %>%
 
 
 # 42 for S. aureus is correct!
+```
+```{r}
+primal_md %>% 
+  filter(LOS==T) %>% 
+  filter(culture_results_LOS!="none_only_clinical") %>% 
+  distinct(setID, .keep_all = T) %>% 
+  select(mainzID.x, mainzID.y, primalID, culture_results_LOS)
 ```
 
 
@@ -984,6 +991,49 @@ p2
 #To calculate the odds ratio (OR) for my logistic regression model, I need to exponentiate the coefficient of log_abund: exp(1.07) ≈ 2.9
 
 ```
+```{r}
+p2 <- ggplot(ps_sa_df_d28_na, aes(x = rel_ab_adj*100)) +
+  geom_violin(aes(y = as.numeric(s_aureus_pos_mibi), fill = s_aureus_pos_mibi),
+              alpha = 0.4, width = 1.4) +
+  geom_jitter(aes(y = as.numeric(s_aureus_pos_mibi),
+                  color = color_group),
+              height = 0.02, width = 0.05, size = 2, alpha = 0.8) +
+  geom_smooth(aes(y = predicted_prob), 
+              method = "lm", color = "black", size = 1.2, se = FALSE) +
+  
+  # left y-axis: culture results
+  scale_y_continuous(
+    breaks = c(0, 1),
+    labels = c("Negative", "Positive"),
+    sec.axis = sec_axis(~ ., name = "Predicted probability")  # right axis
+  ) +
+  
+  scale_color_manual(values = c("Culture negative" = "#969696", 
+                                "Culture positive" = "#88C9BF",   
+                                "BSI positive" = "#CC00CC")) +
+  scale_fill_manual(values = c("FALSE" = "#969696", "TRUE" = "#88C9BF"), 
+                    labels = c("Negative", "Positive")) +
+  scale_x_log10(
+    breaks = c(0.001, 0.01, 0.1, 1, 10, 100),
+    labels = scales::label_percent(scale = 1, accuracy = 0.01)
+  ) +
+  labs(
+    x = "relative abundance in metaG",
+    y = "By culture",
+    title = "PRIMAL: *S. aureus* detection",
+    fill = "", color = ""
+  ) +
+  guides(fill = "none") +
+  theme_minimal(base_size = 14) +
+  theme(
+    title = element_markdown(hjust = 0),
+    legend.position = "bottom",
+    axis.title.x = element_text(hjust = 0.5),
+    axis.title.y = element_text(hjust = 0.5)
+  )
+p2
+```
+
 
 ## adjust model for total sample readcounts
 ```{r}
@@ -1125,13 +1175,15 @@ p1
 ```
 
 # combine plots
-```{r, fig.height=10, fig.width=14}
-
+```{r, fig.height=8, fig.width=12}
 library(ggpubr)
+# new depth-adjusted S.aureus prevalence
+p4 <- readRDS("depth_standardized_S.aureus_prevalence.rds")
+p5 <- p5+ theme(legend.position = "none")
+
 p6 <- ggarrange(p4,p5, common.legend = T, legend = "bottom")
 
 library(gridExtra)
-
 draft <- grid.arrange(
   p1+theme(legend.position = "top")+labs(tag = "a"),
   p2+theme(legend.position = "top")+labs(tag = "b"),
@@ -1145,9 +1197,9 @@ draft <- grid.arrange(
                        ))
 
 fig <- grid.arrange(
-  p1+theme(legend.position = "top")+labs(tag = "a"),
-  p2+theme(legend.position = "top")+labs(tag = "b"),
-   p3+theme(legend.position = "top")+ labs(tag = "c"), #3
+  p1+theme(legend.position = "none")+labs(tag = "a"),
+  p2+theme(legend.position = "none")+labs(tag = "b"),
+   p3+theme(legend.position = "none")+ labs(tag = "c"), #3
    p4+ ggtitle("Meta analysis:")+labs(tag = "d"), #1
   p5+ ggtitle("Meta analysis:")+ labs(tag = "e"),
   ncol = 6, nrow = 2,
@@ -1157,7 +1209,7 @@ fig <- grid.arrange(
                         c(4,4,4,5,5,5)
                        ))
 
-#ggsave("/Users/rebecca/Documents/Forschung/S_aureus_letter/fig_1.pdf", fig,  width = 14, height = 10)
+ggsave("/Users/rebecca/Documents/Forschung/S_aureus_letter/fig_1.pdf", fig,  width = 12, height = 8)
 ```
 
 # calculate significance for the GNN cohort for BSI+central line

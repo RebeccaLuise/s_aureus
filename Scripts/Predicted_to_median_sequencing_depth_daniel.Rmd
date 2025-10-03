@@ -512,6 +512,52 @@ df_for_plot %>%
 ggsave("ratio_seq_depth.pdf", width = 8, height = 5)
 ```
 
+```{r}
+library(ggpubr)
+
+df_std %>% 
+  select(present_median, present_actual, Total_read_count) %>% 
+  rename(
+    "Adjusted to Median Sequencing Depth" = present_median,
+    "Prior Depth Adjustment" = present_actual
+  ) %>% 
+  pivot_longer(
+    cols = c("Adjusted to Median Sequencing Depth", "Prior Depth Adjustment"),
+    names_to = "method", 
+    values_to = "Presence"
+  ) %>% 
+  mutate(
+    Presence = as.logical(Presence),
+    method = factor(method, levels = c(
+      "Prior Depth Adjustment",
+      "Adjusted to Median Sequencing Depth"
+    )) # <-- order defined here
+  ) %>% 
+  ggplot(aes(x = Presence, y = Total_read_count)) +
+  geom_boxplot(outlier.shape = NA, fill = "lightgrey", alpha = 0.8) +
+  geom_jitter(alpha=0.2, width = 0.2)+
+  stat_compare_means(
+    method = "wilcox", 
+    label = "p"
+  ) +
+  scale_y_log10()+
+  facet_wrap(~ method, ncol = 2) +
+  labs(
+    x = "*S.aureus* detected",
+    y = "Total read count (log scale)",
+    title = "Effect of depth adjustment on *S.aureus* prevalence calls"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    strip.text = element_text(face = "bold", size = 12),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    title = element_markdown(),axis.title.x = element_markdown()
+    
+  )
+
+ggsave("depth_adjustement_effect_saureus_detection.pdf", height = 4, width = 7)
+
+```
 
 
 # explore why Morrow at DOL 9-42 has a prevalence of 0 after read depth adjustment

@@ -53,6 +53,7 @@ df <- df %>%
   ) %>%
   filter(!is.na(Abundance), !is.na(Total_read_count), Total_read_count > 0) %>%
   rename(vfdb_count=Abundance)
+
 ```
 
 ## Calculate presence across different sequencing depth
@@ -497,8 +498,9 @@ ggplot(df, aes(x = log10(Total_read_count),
 ```
 ```{r}
 # Fit logistic regression
-fit <- glm(I(present_median >= 1) ~ log10(Total_read_count), 
+fit <- glm(as_factor(present_median > 0) ~ log10(Total_read_count), 
            data = df_std, family = "binomial")
+
 
 # Extract coefficient for log10(Total_read_count)
 coef_est <- coef(summary(fit))["log10(Total_read_count)", "Estimate"]
@@ -523,6 +525,19 @@ ggplot(df_std, aes(x = log10(Total_read_count),
   annotate("text", x = 5, y = 0.9,   # adjust position as needed
            label = label_text,
            hjust = 0, size = 4)
+```
+
+
+```{r}
+df_std %>% 
+  ggplot(aes(x=as_factor(present_median), y=log10(Total_read_count)))+
+  geom_boxplot()+
+  stat_compare_means(method = "wilcox")
+
+df_std %>% 
+  ggplot(aes(x=as_factor(present_actual), y=log10(Total_read_count)))+
+  geom_boxplot()+
+  stat_compare_means(method = "wilcox")
 ```
 
 # calculate to minimum reads
@@ -583,7 +598,6 @@ fill_palette <- fill_palette[legend_order]
         axis.title.y = ggtext::element_markdown(),
         panel.spacing = unit(1, "lines")) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
-
 
 ```
 
@@ -731,7 +745,7 @@ s_aureus_adj <- s_aureus_adj %>%
   mutate(s_aureus_pos = case_when(present_median>=1~T, T~F))
 
 df_std <- df_std %>% 
-  left_join(s_aureus_adj%>% select(sample_alias, s_aureus_pos), by="sample_alias") 
+  left_join(s_aureus_adj%>% select(sample_alias, s_aureus_pos, S_aureus_count), by="sample_alias") 
 
 df_std %>% distinct(Sample, .keep_all = T) %>% count(s_aureus_pos)
 
@@ -826,7 +840,7 @@ ggplot(aes(x = x_key, fill = study_short)) +
   labs(
    # title = "Depth-standardized virulence gene prevalence in *S.aureus* pos. samples",
    # subtitle = "Bars show prevalence at median seq depth D* = 34.2 Mio",
-    y = "*Staphylococcus* VG prevalence", x = "", fill = "Study"
+    y = "SVG prevalence", x = "", fill = "Study"
   ) +
   geom_hline(data = hline_data_prev, aes(yintercept = hline_y),
              colour = "black", linetype = 2, inherit.aes = FALSE) +
@@ -839,7 +853,7 @@ ggplot(aes(x = x_key, fill = study_short)) +
         panel.spacing = unit(1, "lines"), legend.position = "none") #+
   #guides(fill = guide_legend(nrow = 1, position = "none"))
 
-ggsave("virulence_gene_prevalence_depth_stand_s_aureus_pos.pdf", width = 7, height = 4.5)
+ggsave("virulence_gene_prevalence_depth_stand_s_aureus_pos.pdf", width = 6, height = 4)
 ```
 
 # Heatmap for all virulence gene pos samples at median seq depth
@@ -1125,11 +1139,11 @@ fill_palette <- fill_palette[legend_order]
 library(ggsignif)
 
 anno_df <- data.frame(
-  Timepoint = "DOL 9-42",   
-  xmin = c("DOL 9-42|PRIMAL, N=151", "DOL 9-42|PRIMAL, N=151"),
-  xmax = c("DOL 9-42|Rahman, N=30", "DOL 9-42|Gibson, N=53"),
-  annotations = c("FDR = 0.04", "FDR = 0.05"),
-  y_position = c(2, 2.2)
+  Timepoint = c("DOL 9-42",   "DOL 43-455"),
+  xmin = c("DOL 9-42|PRIMAL, N=151", "DOL 43-455|PRIMAL, N=7"),
+  xmax = c("DOL 9-42|Rahman, N=30", "DOL 43-455|Rahman, N=2"),
+  annotations = c("**", "***"),
+  y_position = c(2, 2)
 )
 
 df_with_richness <- df_with_richness %>%
@@ -1143,18 +1157,18 @@ anno_df <- anno_df %>%
 
 df_with_richness %>% 
   ggplot(aes(x = x_key, y = gene_richness, fill = study_short)) +
-  geom_boxplot() +
+  geom_boxplot(width = 0.6) +
   scale_y_log10(breaks = c(1, 10, 30, 100, 300),
                 labels = c("1", "10", "30", "100", "300"))+
   scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
   facet_grid(~ Timepoint, scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
-  labs(y = "*Staphylococcus* VG richness", x = "", fill = "Study") +
+  labs(y = "SVG richness", x = "", fill = "Study") +
   geom_signif(
     data = anno_df,
     manual = TRUE,
     inherit.aes = FALSE,
-    aes(xmin = xmin, xmax = xmax, annotations = annotations, y_position = y_position)
+    aes(xmin = xmin, xmax = xmax, annotations = annotations, y_position = y_position),textsize = 6, vjust = 0.5
   ) +
   theme_minimal(base_size = 14) +
   theme(strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
@@ -1164,7 +1178,7 @@ df_with_richness %>%
         panel.spacing = unit(1, "lines"), legend.position = "none") #+
   #guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
-ggsave("virulence_richness_boxplot.pdf", height = 5, width = 7)
+ggsave("virulence_richness_boxplot.pdf", height = 4, width = 6)
 ```
 
 ```{r}
@@ -1172,7 +1186,7 @@ test_results <- df_with_richness%>%
   group_by(Timepoint) %>%
   do(
     broom.mixed::tidy(
-      lm(gene_richness ~ study_short,
+      lmerTest::lmer(gene_richness ~ study_short + (1|subject_id),
                        data = .))) %>%
   mutate(
     fdr = p.adjust(p.value, method = "BH"),
@@ -1186,8 +1200,9 @@ test_results <- df_with_richness%>%
     )
   )
 
+test_results %>% 
+  filter(significance!="ns")
 ```
-
 
 # calculate prevalence per gene category
 ## only S. aureus positive samples
@@ -1311,12 +1326,12 @@ df_clean %>%
   pivot_wider(names_from = Sample, values_from = present_median)
 
 # 1. Transpose so samples are rows
-vfdb_mat_clean <- vfdb_mat[ rowSums(vfdb_mat, na.rm = TRUE) > 0, ]#Remove all-zero genes (rows)
+#vfdb_mat_clean <- vfdb_mat[ rowSums(vfdb_mat, na.rm = TRUE) > 0, ]#Remove all-zero genes (rows)
 vfdb_mat_t <- t(heatmap_mat)
 
 # 2. Keep only samples with at least one gene
-nonzero_samples <- rowSums(vfdb_mat_t) > 0
-vfdb_mat_nonzero <- vfdb_mat_t[nonzero_samples, ]
+#nonzero_samples <- rowSums(vfdb_mat_t) > 0
+#vfdb_mat_nonzero <- vfdb_mat_t[nonzero_samples, ]
 
 library(vegan)
 # 3. Compute Jaccard distance
@@ -1324,26 +1339,6 @@ vfdb_dist <- vegdist(vfdb_mat_t, method = "jaccard", binary = TRUE)
 
 # 4. Run PCoA
 pcoa_res <- pcoa(vfdb_dist)
-
-# 5. Prepare plotting dataframe
-pcoa_df <- as.data.frame(pcoa_res$vectors[, 1:2])
-pcoa_df$Sample <- rownames(pcoa_df)
-
-# add metadata
-pcoa_df <- pcoa_df %>% 
-  left_join(md_cat_new, by = c("Sample"= "ID"))
-
-# 6. Plot
-ggplot(pcoa_df, aes(x = Axis.1, y = Axis.2, color = study_id)) +#, shape = timepoint_category
-  geom_point(size = 3, alpha = 0.5) +
-  labs(
-    x = paste0("PCoA1 (", round(pcoa_res$values$Relative_eig[1] * 100, 1), "%)"),
-    y = paste0("PCoA2 (", round(pcoa_res$values$Relative_eig[2] * 100, 1), "%)"),
-    title = "PCoA on VFDB presence/absence (Jaccard, samples with genes only)"
-  ) +
-  theme_minimal() +
-  theme(legend.position = "bottom")+
-  facet_wrap(~timepoint_category)
 
 metadata_df_aureus<-metadata_df_aureus %>% 
   mutate(Country= case_when(Cohort=="PRIMAL"~"Germany", T~"US"))
@@ -1365,7 +1360,6 @@ permanova_ic <- adonis2(
   data = metadata_df_aureus,
   by = "terms"
 )
-
 
 # 6. Inspect results
 print(permanova_study)
@@ -1446,7 +1440,7 @@ df_Ab_aureus %>%
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
 
-ggsave("virulence_gene_abundance_boxplot.pdf", height = 5, width = 7)
+ggsave("virulence_gene_abundance_boxplot.pdf", height = 4, width = 7)
   
 ```
 
@@ -1480,8 +1474,8 @@ df_sumAb %>%
   facet_grid(~ Timepoint, scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
   labs(
-    title = "*VG* relative abundance",
-    y = "*Staphylococcus* total VG reads per million", x = "", fill = "Study"
+    #title = "*VG* relative abundance",
+    y = "Total SVG counts per million", x = "", fill = "Study"
   ) +
   theme_minimal(base_size = 14) +
   theme(strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
@@ -1489,33 +1483,202 @@ df_sumAb %>%
         axis.text.x = element_text(angle = 45, hjust = 1),
         axis.title.y = ggtext::element_markdown(),
         title = ggtext::element_markdown(),
+        panel.spacing = unit(1, "lines"), legend.position = "none") #+
+  #guides(fill = guide_legend(nrow = 1, position = "bottom"))
+ggsave("summed_relativeAbundance_VG.pdf", height = 4, width = 6)
+```
+### linear mixed effect model on abundance
+```{r}
+library(lmerTest)
+
+test_results_ab <- df_sumAb %>% 
+  left_join(df_Ab_aureus %>% select(Sample, subject_id), by="Sample") %>% 
+  distinct(Sample, .keep_all = T) %>% 
+  group_by(Timepoint) %>% 
+  do(
+    broom.mixed::tidy(
+      lmerTest::lmer(total_adj_rel ~ study_short + (1 | subject_id),
+                       data = .),
+      effects = "fixed",
+      conf.int = TRUE,    # get CI directly
+      conf.method = "Wald"
+    )
+  ) %>%
+  mutate(
+    OR = exp(estimate),
+    OR_low = exp(conf.low),
+    OR_high = exp(conf.high),
+    fdr = p.adjust(p.value, method = "BH"),
+    fdr = round(fdr, digits = 5),
+    significance = case_when(
+      fdr > 0.05 ~ "ns",
+      fdr < 0.001 ~ "***",
+      fdr < 0.01 ~ "**",
+      fdr < 0.05 ~ "*"
+    )
+  )
+
+write_csv(test_results_ab, "lme_results_virulence_gene_abundance_across_cohorts.csv")
+
+test_results_ab %>% 
+  filter(term!="(Intercept)")
+  
+```
+
+# S.aureus counts vs. virulence gene counts
+```{r}
+df_std %>% 
+  ggplot(aes(x=S_aureus_count, y= vfdb_count, color=s_aureus_pos))+
+  geom_point()+
+  stat_cor()+
+  theme_minimal()
+
+df_std %>% 
+  mutate(vg_saureus_count= vfdb_count/S_aureus_count) %>% 
+  filter(s_aureus_pos==T) %>% 
+  ggplot(aes(x=study, y= vg_saureus_count*100, color=study))+
+  geom_boxplot()+
+  theme_minimal()+
+  scale_y_log10(breaks=c(0.01,0.1,1,10,100), labels=c("0.01","0.1","1","10","100"))
+```
+
+## sum genes so total_vg_load per S.aureus counts
+```{r}
+
+df_Ab_aureus <- df_Ab_aureus%>% 
+  mutate(vg_saureus_count= vfdb_count/S_aureus_count) 
+
+df_sumAb <- df_Ab_aureus %>% 
+group_by(Sample, study_short, Timepoint) %>%
+  summarise(total_adj_rel = sum(vg_saureus_count, na.rm = TRUE), .groups = "drop")
+
+n_by_group <-  df_sumAb %>% count(study_short, Timepoint)
+
+df_sumAb <- df_sumAb %>% 
+  left_join(n_by_group, by = c("study_short","Timepoint")) %>% 
+  mutate(x_label = paste0(study_short, ", N=", n),
+    x_key   = paste(Timepoint, x_label, sep = "|")) %>%
+  group_by(Timepoint) %>%
+  arrange(study_short, .by_group = TRUE) %>%
+  ungroup()
+
+levels <- df_sumAb %>%
+ arrange(Timepoint, study_short) %>%
+  pull(x_key) %>% unique()
+
+df_sumAb <- df_sumAb %>%
+  mutate(x_key = factor(x_key, levels = levels))
+
+df_sumAb %>% 
+  ggplot(aes(x = x_key, y = total_adj_rel, fill = study_short)) +
+  geom_boxplot( width = 0.6) +
+  scale_y_log10()+#breaks=c(0.01,0.1,1,10,100), labels=c("0.01","0.1","1","10","100")) +
+  scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
+  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
+  labs(
+    #title = "*VG* relative abundance",
+    y = "Total SVG counts per *S.aureus* count", x = "", fill = "Study"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
+        strip.text = element_text(face = "bold", size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.y = ggtext::element_markdown(),
+        title = ggtext::element_markdown(),
+        panel.spacing = unit(1, "lines"), legend.position = "none") #+
+  #guides(fill = guide_legend(nrow = 1, position = "bottom"))
+```
+```{r}
+test_results_gps <- df_sumAb %>% 
+  left_join(df_Ab_aureus %>% select(Sample, subject_id), by="Sample") %>% 
+  distinct(Sample, .keep_all = T) %>% 
+  group_by(Timepoint) %>% 
+  do(
+    broom.mixed::tidy(
+      lmerTest::lmer(total_adj_rel ~ study_short + (1 | subject_id),
+                       data = .),
+      effects = "fixed",
+      conf.int = TRUE,    # get CI directly
+      conf.method = "Wald"
+    )
+  ) %>%
+  mutate(
+    OR = exp(estimate),
+    OR_low = exp(conf.low),
+    OR_high = exp(conf.high),
+    fdr = p.adjust(p.value, method = "BH"),
+    fdr = round(fdr, digits = 5),
+    significance = case_when(
+      fdr > 0.05 ~ "ns",
+      fdr < 0.001 ~ "***",
+      fdr < 0.01 ~ "**",
+      fdr < 0.05 ~ "*"
+    )
+  )
+
+test_results_ab %>% 
+  filter(term!="(Intercept)") %>% 
+  filter(significance!="ns")
+```
+```{r}
+df_Ab_aureus %>% 
+  distinct(Sample, .keep_all = T) %>% 
+  ggplot(aes(x = x_key, y = S_aureus_count/tax_reads*100, fill = study_short)) +
+  geom_boxplot(width = 0.6) +
+  #scale_y_continuous(limits = c(0,0.01))+
+  scale_y_log10(breaks=c(0.01,0.1,1,10,100), labels=c("0.01","0.1","1","10","100")) +
+  scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
+  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  #geom_hline(data = hline_data_relab, aes(yintercept = hline_y),
+           #  colour = "black", linetype = 2, inherit.aes = FALSE) +
+  scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
+  labs(
+    title = "*Staphylococcus aureus* positive samples only",
+    #subtitle = paste0("Simple rescaling to D* = ", format(D_star, big.mark=","), " reads"),
+    y = "*Staphylococcus aureus* relative abundance (%)", x = "", fill = "Study"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
+        strip.text = element_text(face = "bold", size = 14),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.y = ggtext::element_markdown(),
+        title= ggtext::element_markdown(),
         panel.spacing = unit(1, "lines")) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
 ```
 ```{r}
-df_demo <- data.frame(
-  Cohort = c(rep("Cohort 1", 3), rep("Cohort 2", 8)),
-  Gene   = c(paste0("VG", 1:3), paste0("VG", 1:8)),
-  Abundance = c(80, 15, 5, rep(12.5, 8))  # sums to 100 for both
-)
+test_results_saureusOnly <- df_Ab_aureus %>% 
+  distinct(Sample, .keep_all = T) %>% 
+  #left_join(df_Ab_aureus %>% select(Sample, subject_id), by="Sample") %>% 
+  #distinct(Sample, .keep_all = T) %>% 
+  group_by(Timepoint) %>% 
+  do(
+    broom.mixed::tidy(
+      lmerTest::lmer(S_aureus_count/tax_reads ~ study_short + (1 | subject_id),
+                       data = .),
+      effects = "fixed",
+      conf.int = TRUE,    # get CI directly
+      conf.method = "Wald"
+    )
+  ) %>%
+  mutate(
+    OR = exp(estimate),
+    OR_low = exp(conf.low),
+    OR_high = exp(conf.high),
+    fdr = p.adjust(p.value, method = "BH"),
+    fdr = round(fdr, digits = 5),
+    significance = case_when(
+      fdr > 0.05 ~ "ns",
+      fdr < 0.001 ~ "***",
+      fdr < 0.01 ~ "**",
+      fdr < 0.05 ~ "*"
+    )
+  )
 
-ggplot(df_demo, aes(x = Cohort, y = Abundance, fill = Gene)) +
-  geom_bar(stat = "identity", width = 0.6) +
-  labs(y = "Relative abundance (%)", x = "") +
-  theme_minimal(base_size = 14) +
-  theme(legend.position = "right")
-
-df_sumAb %>%
-  #filter(s_aureus_pos==T) %>% 
-    ggplot(
-  aes(x = study_short, y = total_adj_rel*10e6)) +
-  geom_bar(stat = "identity", width = 0.6) +
-  labs(y = "Relative abundance (%)", x = "") +
-  theme_minimal(base_size = 14) +
-  theme(legend.position = "right", axis.text.x = element_text(angle = 45, hjust = 1))
-
-  
+test_results_saureusOnly %>% 
+  filter(term!="(Intercept)") %>% 
+  filter(significance!="ns")
 ```
-
 
