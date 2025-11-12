@@ -23,7 +23,7 @@ library(broom)
 
 
 ```{r}
-ps <- readRDS( "/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Scripts/vfdb_phyloseq.rds")
+ps <- readRDS( "/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/vfdb_phyloseq.rds")
 ```
 
 ```{r}
@@ -720,7 +720,7 @@ ggplot(aes(x = x_key, fill = study_short)) +
         panel.spacing = unit(1, "lines")) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
-ggsave("virulence_gene_prevalence_depth_stand.pdf", width = 8, height = 5)
+#ggsave("virulence_gene_prevalence_depth_stand.#pdf", width = 8, height = 5)
 ```
 
 
@@ -739,7 +739,7 @@ s_aureus_pos <- df_std %>%
 
 # s_aureus detection based on median seq depth
 ```{r}
-s_aureus_adj <- read_delim("s_aureus_adjusted_sequencing_depth.csv")
+s_aureus_adj <- read_delim("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/s_aureus_adjusted_sequencing_depth.csv")
 
 s_aureus_adj <- s_aureus_adj %>% 
   mutate(s_aureus_pos = case_when(present_median>=1~T, T~F))
@@ -853,7 +853,7 @@ ggplot(aes(x = x_key, fill = study_short)) +
         panel.spacing = unit(1, "lines"), legend.position = "none") #+
   #guides(fill = guide_legend(nrow = 1, position = "none"))
 
-ggsave("virulence_gene_prevalence_depth_stand_s_aureus_pos.pdf", width = 6, height = 4)
+#ggsave("virulence_gene_prevalence_depth_stand_s_aureus_pos.#pdf", width = 6, height = 4)
 ```
 
 # Heatmap for all virulence gene pos samples at median seq depth
@@ -970,11 +970,12 @@ hm <- pheatmap(
   na_col = "grey90"   # only used if you kept NA values instead of turning them to 0
 )
 
-# Save to PDF
-pdf("heatmap_absence_presence_virulence_genes_medianSeqDepth.pdf", height = 12, width = 14)
+# Save to #pdf
+#pdf("heatmap_absence_presence_virulence_genes_medianSeqDepth.#pdf", height = 12, width = 14)
 grid::grid.draw(hm$gtable)  # draw the heatmap grob
 dev.off()
 ```
+
 # Heatmap for S.aureus pos samples at median seq depth prevalence
 
 ```{r}
@@ -1088,13 +1089,14 @@ hm <- pheatmap(
   na_col = "grey90"   # only used if you kept NA values instead of turning them to 0
 )
 
-# Save to PDF
+# Save to #pdf
 pdf("heatmap_absence_presence_virulence_genes_medianSeqDepth_sAureusPos.pdf", height = 12, width = 14)
 grid::grid.draw(hm$gtable)  # draw the heatmap grob
 dev.off()
 ```
 
 # calculate virulence gene load = total sum of genes carried per sample = richness
+
 ```{r, fig.height=7, fig.width=8}
 df_with_richness <- df_std%>%
   filter(s_aureus_pos==T) %>% 
@@ -1178,7 +1180,7 @@ df_with_richness %>%
         panel.spacing = unit(1, "lines"), legend.position = "none") #+
   #guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
-ggsave("virulence_richness_boxplot.pdf", height = 4, width = 6)
+#ggsave("virulence_richness_boxplot.#pdf", height = 4, width = 6)
 ```
 
 ```{r}
@@ -1269,7 +1271,7 @@ category_prev_aureus %>%
     fill = "Cohort"
   )
 
-ggsave("virulence_categories_med_seq_depth.pdf", width = 8, height = 5)
+#ggsave("virulence_categories_med_seq_depth.#pdf", width = 8, height = 5)
 ```
 
 ## run glm on S.aureus pos. samples and virulence gene categories across samples
@@ -1308,7 +1310,7 @@ test_results_cat <-test_df %>%
     )
   )
 
-write_csv(test_results_cat, "glmm_results_virulence_gene_categories_across_cohorts.csv")
+#write_csv(test_results_cat, "glmm_results_virulence_gene_categories_across_cohorts.csv")
 
 test_results_cat %>% 
   filter(term!="(Intercept)")
@@ -1440,7 +1442,7 @@ df_Ab_aureus %>%
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
 
-ggsave("virulence_gene_abundance_boxplot.pdf", height = 4, width = 7)
+#ggsave("virulence_gene_abundance_boxplot.#pdf", height = 4, width = 7)
   
 ```
 
@@ -1485,7 +1487,7 @@ df_sumAb %>%
         title = ggtext::element_markdown(),
         panel.spacing = unit(1, "lines"), legend.position = "none") #+
   #guides(fill = guide_legend(nrow = 1, position = "bottom"))
-ggsave("summed_relativeAbundance_VG.pdf", height = 4, width = 6)
+#ggsave("summed_relativeAbundance_VG.#pdf", height = 4, width = 6)
 ```
 ### linear mixed effect model on abundance
 ```{r}
@@ -1518,7 +1520,7 @@ test_results_ab <- df_sumAb %>%
     )
   )
 
-write_csv(test_results_ab, "lme_results_virulence_gene_abundance_across_cohorts.csv")
+#write_csv(test_results_ab, "lme_results_virulence_gene_abundance_across_cohorts.csv")
 
 test_results_ab %>% 
   filter(term!="(Intercept)")

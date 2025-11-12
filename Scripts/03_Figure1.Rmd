@@ -1,0 +1,555 @@
+---
+title: 'Figure 1: Detection and dynamics of Staphylococcus aureus colonization across early life and multiple cohorts.'
+author: "Rebecca L. Knoll"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This script comprises all the data analysis presented in Figure 1, besides Figure 1d, which is retrieved from the Predicted_to_median_sequencing_depth.Rmd
+
+# load libraries
+```{r}
+pacman::p_load(tidyverse, phyloseq, magrittr, janitor, microbiome, knitr, lubridate, naniar, stringr)
+
+library(phyloseq)
+library(gtsummary)
+library(ggpubr)
+library(scales)
+library(gridExtra)
+library(ggtext)
+
+setwd("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus") # adjust to your working directory
+```
+
+# load data
+```{r}
+ps_aureus <- readRDS("Data/S.aureus_only_phyloseq.rds")
+
+krinko_o <- read_delim("Data/clean_mdro_mainz_data_20250114.csv")
+
+primal_md <-  read.delim("Data/primal_metadata.csv", sep = ",")
+```
+
+```{r}
+ps_aureus_clean_genus <- tax_glom(ps_aureus, taxrank = "genus")
+
+# Sum abundances manually by genus
+psmelt_genus <- psmelt(ps_aureus_clean_genus)
+
+aureus_df <- psmelt_genus
+```
+
+```{r}
+
+aureus_df <- aureus_df %>%
+  mutate(rel_ab = Abundance/total_reads) 
+
+n_df <- aureus_df %>%
+  group_by(study_id, timepoint_category) %>%
+  summarise(n_samples = n())
+
+aureus_df <- aureus_df  %>% 
+  mutate(study_short = case_when(study_id=="Gasparrini_2019_infant"~"Gasparrini",study_id=="Gibson_2016_preterm"~"Gibson",study_id=="Morrow_2016_preterm_infants"~"Morrow",study_id=="Parnanen_2019_infant"~"Pärnanen", study_id=="Rahman_2018_preterm_NICU"~"Rahman", T~study_id)) %>% 
+  left_join(n_df, by=c("study_id", "timepoint_category")) %>% 
+  mutate(x_label = paste0(study_short, ", N=", n_samples))
+
+aureus_df$study_short <- factor(aureus_df$study_short, levels=c("PRIMAL","Gibson","Rahman",  "Gasparrini",  "Morrow", "Pärnanen"))
+  
+# Calculate medians per facet (timepoint_category)
+hline_data_relab <- aureus_df%>%
+  group_by(timepoint_category) %>%
+  summarise(hline_y = round(mean(rel_ab*100, na.rm = TRUE), digits = 5))
+hline_data_relab$timepoint_category <- factor(hline_data_relab$timepoint_category, 
+                                              levels = c("DOL 1-8", "DOL 9-42", "DOL 43-455"))
+
+
+x_label_levels <- c( "PRIMAL, N=232", 
+  "PRIMAL, N=50", 
+  "PRIMAL, N=434",
+  "Gibson, N=201", 
+  "Gibson, N=32", 
+  "Gibson, N=161",
+  "Rahman, N=94", 
+  "Rahman, N=14", 
+  "Rahman, N=193",
+  "Gasparrini, N=51", 
+  "Gasparrini, N=137", 
+  "Gasparrini, N=64",
+  "Morrow, N=60", 
+  "Morrow, N=20",
+  "Pärnanen, N=38",
+  "Pärnanen, N=1"
+)
+
+
+aureus_df$x_label <- factor(aureus_df$x_label, levels = x_label_levels)
+
+
+aureus_df$timepoint_category<- factor(aureus_df$timepoint_category, levels=c("DOL 1-8", "DOL 9-42", "DOL 43-455"))
+
+p5 <- ggplot(aureus_df, aes(x = x_label, y = rel_ab* 100, fill = study_short)) +
+  geom_boxplot(outlier.shape = NA, width = 0.6) +
+  scale_y_log10(
+    breaks = c(0.01, 0.1, 1, 10, 100), # breaks at 0.1%, 1%, 10%, 100%
+    labels = c("0.01", "0.1", "1", "10", "100")  # format as %
+  ) +
+  scale_fill_manual(values = c("#88C9BF", "#D9D9D9", "#BDBDBD", "#969696", "#636363", "#4D4D4D")) +
+  facet_grid(~timepoint_category, scales = "free_x", space = "free") +
+  theme_minimal(base_size = 14) +
+  theme(
+    strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
+    strip.text = element_text(face = "bold", size = 14),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title.y = element_markdown(),
+    panel.spacing = unit(1, "lines")
+  ) +
+  labs(
+    y = "*S. aureus* relative abundance (%)",
+    fill = "Study",
+    x = ""
+  ) +
+  guides(fill = guide_legend(nrow = 1, position = "bottom"))+
+  geom_hline(data = hline_data_relab, aes(yintercept = hline_y), colour = "black", linetype = 2)
+p5
+
+aureus_df %>% 
+  filter(timepoint<=8) %>% 
+  summarise(mean=mean(rel_ab*100, na.rm = T), median = median(rel_ab*100, na.rm = T))
+
+aureus_df %>% 
+  filter(timepoint>8&timepoint<=42) %>% 
+  summarise(mean=mean(rel_ab*100, na.rm = T), median = median(rel_ab*100, na.rm = T))
+
+aureus_df %>% 
+  filter(timepoint>42) %>% 
+  summarise(mean=mean(rel_ab*100, na.rm = T), median = median(rel_ab*100, na.rm = T))
+```
+
+# continous analysis 
+```{r}
+aureus_df%>% 
+  filter(timepoint<=42) %>% 
+  ggplot(aes(x=timepoint+1, y=(rel_ab*100), color=study_short))+
+  geom_point(alpha=0.8)+
+  scale_y_log10(
+    breaks = c(0.01, 0.1, 1, 10, 100),  # breaks at 0.1%, 1%, 10%, 100%
+    labels = label_percent(scale = 1, accuracy = 0.01)  # format as %
+  ) +
+  scale_color_manual(values = c("#88C9BF", "#D9D9D9", "#BDBDBD", "#969696", "#636363", "#252525")) +
+  theme_minimal(base_size = 14)+
+  geom_smooth(method = "lm", se=F)+
+  #geom_smooth(method = "loess", se = F, span=1)+
+  labs(
+    y = "*S. aureus* relative abundance (%)",
+    fill = "Study",
+    x = ""
+  ) +
+  theme(axis.title.y = element_markdown())
+```
+
+# add sepsis and culture result data to aureus_df
+## check raw krinko data
+```{r}
+
+krinko_o %>% 
+  mutate(s_aureus_pos_mibi = case_when(cultureTestDone==T&
+    grepl("staph", x1_bakt, ignore.case = TRUE) ~ TRUE,cultureTestDone==T&
+    grepl("staph", x2_bakt, ignore.case = TRUE) ~ TRUE,cultureTestDone==T&
+    grepl("staph", x3_bakt, ignore.case = TRUE) ~ TRUE,cultureTestDone==F ~ NA,
+    TRUE ~ FALSE
+  )) %>% 
+  count(s_aureus_pos_mibi)
+
+
+# 42 for S. aureus is correct!
+```
+
+```{r}
+primal_md %>% 
+  filter(LOS==T) %>% 
+  filter(culture_results_LOS!="none_only_clinical") %>% 
+  distinct(setID, .keep_all = T) %>% 
+  select(mainzID.x, mainzID.y, primalID, culture_results_LOS)
+```
+
+
+```{r}
+md_krinko <- primal_md %>% 
+  filter(cultureTestDone==T) %>% 
+  filter(sampleCategory=="c.028") %>% 
+  left_join(krinko_o, by="primalID" ) %>% 
+  distinct(setID, .keep_all = T)
+
+md_krinko %>%
+  pivot_longer(cols = c("x1_bakt", "x2_bakt", "x3_bakt"), names_to = "position", values_to = "bacteria") %>%
+  filter(!is.na(bacteria)) %>% 
+  count(bacteria, sort = TRUE)
+
+prev = 54/553
+prev
+
+md_krinko %>%
+  pivot_longer(cols = c("x1_antibio", "x2_antibiotika", "x3_antibiotika"), names_to = "position", values_to = "atb") %>%
+  filter(!is.na(atb)) %>% 
+  count(atb, sort = TRUE)
+```
+
+# Check abundance of S. aureus in PRIMAL and compare with sepsis cases
+```{r}
+primal_md_sel <- primal_md %>% 
+  select(primalID, sampleCategoryNames, culture_results_LOS, cultureTestDone) %>% 
+  filter(sampleCategoryNames!="Mother Day 1") %>% 
+  distinct(primalID, .keep_all = T)
+
+md_krinko_sel <- md_krinko %>% 
+  select(primalID, x1_bakt, x2_bakt, x3_bakt, setID)
+
+primal_sa_df <- aureus_df %>% 
+  filter(study_short=="PRIMAL") %>% 
+  left_join(primal_md_sel, by= c("sample_id"="primalID")) %>% 
+  left_join(md_krinko_sel, by= c("sample_id"="primalID"))
+  
+
+
+primal_sa_df <- primal_sa_df %>% 
+  mutate(S.aureus_LOS= case_when(culture_results_LOS=="Staphylococcus aureus"~T, T~F))%>%
+  mutate(s_aureus_pos = rel_ab > 0)
+
+primal_sa_df %>%
+  group_by(s_aureus_pos) %>% # prevalence in metaG
+  count(timepoint_category)
+
+plot_df <- primal_sa_df %>%
+  group_by(timepoint_category, s_aureus_pos) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(timepoint_category) %>%
+  mutate(percent = 100 * n / sum(n))
+
+primal_sa_df <- primal_sa_df %>%
+  mutate(s_aureus_pos_mibi = case_when(cultureTestDone==T&
+    grepl("staph", x1_bakt, ignore.case = TRUE) ~ TRUE,cultureTestDone==T&
+    grepl("staph", x2_bakt, ignore.case = TRUE) ~ TRUE,cultureTestDone==T&
+    grepl("staph", x3_bakt, ignore.case = TRUE) ~ TRUE,cultureTestDone==F ~ NA,
+    TRUE ~ FALSE
+  ))
+
+summary(primal_sa_df$s_aureus_pos_mibi)
+
+ps_sa_df_d28 <- primal_sa_df %>% 
+  mutate(present = rel_ab > 0) %>%
+  filter(sampleCategoryNames=="Infant Day 28")
+
+summary(ps_sa_df_d28$s_aureus_pos_mibi)
+
+summary(as_factor(primal_sa_df$x3_bakt))
+
+tab <- table(
+  metaG = ps_sa_df_d28$present,
+  CM = ps_sa_df_d28$s_aureus_pos_mibi
+)
+
+#sensitivity = 28/(28+1) #(TP/TP+FN) -> 96.6%
+new_motu_sensitivity = 25/(25+2) #-> 92.6%
+#specificity = 305/(305+127) #(TN/TN+FP) -> 70%
+261/(261+127) # 67.3%
+#accuracy = (305+28)/(305+28+1+127) #(T/all)-> 72%
+(261+25)/(261+2+127+25) #68.9%
+
+# 415 samples have matching culture and metaG results for day 28
+
+library(vcd)
+mosaic(tab,
+       shade = FALSE, 
+       legend = TRUE,
+       main = "Staphylococcus aureus presence (metaG vs CM) d28",
+       labeling_args = list(set_varnames = c("metaG", "CM")))
+
+summary(glm(s_aureus_pos_mibi~(rel_ab), data = ps_sa_df_d28, family="binomial"))
+ps_sa_df_d28$Abundance_pct <- ps_sa_df_d28$rel_ab * 100
+summary(glm(s_aureus_pos_mibi~Abundance_pct, data = ps_sa_df_d28, family="binomial"))
+summary(glm(s_aureus_pos_mibi ~ log10(rel_ab+ 1e-6), data = ps_sa_df_d28, family="binomial"))
+# the log10-transformation has the lowest AIC (145) and lowest residual deviance (146) — both are strong indicators of better fit.
+
+# Add log-transformed abundance to your data
+ps_sa_df_d28$log_abund <- log10(ps_sa_df_d28$rel_ab+ 1e-6)
+
+# remove NA's
+
+ps_sa_df_d28_na <- ps_sa_df_d28 %>% 
+  filter(!is.na(s_aureus_pos_mibi))
+
+# Create predicted probabilities from the model
+model <- glm(s_aureus_pos_mibi ~ log_abund, family = "binomial", data = ps_sa_df_d28_na)
+ps_sa_df_d28_na$predicted_prob <- predict(model, type = "response", na.action = T)
+summary(model)
+
+# Plot
+ps_sa_df_d28_na <- ps_sa_df_d28_na %>%
+  mutate(rel_ab_adj = ifelse(rel_ab == 0, 0.00001, rel_ab))  # replace 0 with small value
+
+ps_sa_df_d28_na <- ps_sa_df_d28_na %>%
+  mutate(color_group = case_when(
+    S.aureus_LOS == TRUE ~ "BSI positive",
+    s_aureus_pos_mibi == TRUE ~ "Culture positive",
+    TRUE ~ "Culture negative"
+  ))
+
+#To calculate the odds ratio (OR) for my logistic regression model, I need to exponentiate the coefficient of log_abund: exp(1.07) ≈ 2.9
+
+p2 <- ggplot(ps_sa_df_d28_na, aes(x = rel_ab_adj*100)) +
+  geom_violin(aes(y = as.numeric(s_aureus_pos_mibi), fill = s_aureus_pos_mibi),
+              alpha = 0.4, width = 1.4) +
+  geom_jitter(aes(y = as.numeric(s_aureus_pos_mibi),
+                  color = color_group),
+              height = 0.02, width = 0.05, size = 2, alpha = 0.8) +
+  geom_smooth(aes(y = predicted_prob), 
+              method = "lm", color = "black", size = 1.2, se = FALSE) +
+  
+  # left y-axis: culture results
+  scale_y_continuous(
+    breaks = c(0, 1),
+    labels = c("Negative", "Positive"),
+    sec.axis = sec_axis(~ ., name = "Predicted probability")  # right axis
+  ) +
+  
+  scale_color_manual(values = c("Culture negative" = "#969696", 
+                                "Culture positive" = "#88C9BF",   
+                                "BSI positive" = "#CC00CC")) +
+  scale_fill_manual(values = c("FALSE" = "#969696", "TRUE" = "#88C9BF"), 
+                    labels = c("Negative", "Positive")) +
+  scale_x_log10(
+    breaks = c(0.001, 0.01, 0.1, 1, 10, 100),
+    labels = scales::label_percent(scale = 1, accuracy = 0.01)
+  ) +
+  labs(
+    x = "relative abundance in metaG",
+    y = "By culture",
+    title = "PRIMAL: *S. aureus* detection",
+    fill = "", color = ""
+  ) +
+  guides(fill = "none") +
+  theme_minimal(base_size = 14) +
+  theme(
+    title = element_markdown(hjust = 0),
+    legend.position = "bottom",
+    axis.title.x = element_text(hjust = 0.5),
+    axis.title.y = element_text(hjust = 0.5)
+  )
+p2
+```
+
+## adjust model for total sample readcounts
+```{r}
+# Create predicted probabilities from the model
+model_corr <- glm(s_aureus_pos_mibi ~ log_abund+reads, family = "binomial", data = ps_sa_df_d28_na)
+#ps_sa_df_d28_na$predicted_prob <- predict(model_, type = "response", na.action = T)
+summary(model_corr)
+summary(model)
+```
+
+# Subanalyze LOS sepsis cases and their results in screenings
+```{r}
+
+primal_sa_df$timepoint_category <- factor(primal_sa_df$timepoint_category , levels=c("DOL 1-8", "DOL 9-42", "DOL 43-455"))
+
+primal_sa_df<- primal_sa_df%>%
+  mutate(color_group = case_when(
+    S.aureus_LOS == TRUE ~ "BSI positive",
+    s_aureus_pos_mibi == TRUE ~ "Culture positive",
+    TRUE ~ "Culture negative"
+  ))
+
+primal_sa_df %>% 
+  filter(!is.na(timepoint_category), timepoint_category!="DOL >456") %>% 
+  ggplot(aes(y = rel_ab*100, x = timepoint_category)) +
+ # geom_line(aes(group = ), alpha = 0.4) +
+  geom_boxplot(outlier.shape = NA, fill = "gray90", width = 0.6) +
+  geom_jitter(aes(color=S.aureus_LOS), width = 0.2, height = 0, alpha = 0.6, size = 2) +
+  scale_y_log10(
+    breaks = c(0.01, 0.1, 1, 10, 100),  # breaks at 0.1%, 1%, 10%, 100%
+    labels = label_percent(scale = 1, accuracy = 0.01)  # format as %
+  ) +
+  ylab("Relative abundance *S. aureus*") +
+  xlab("") +
+  theme_minimal(base_size = 14) +
+  theme(axis.title.y =element_markdown(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.minor = element_blank(), legend.position = "right", legend.title.position = "top", legend.title = element_markdown()
+  )+
+  scale_color_manual(values= c("FALSE" = "#88C9BF", "TRUE" = "magenta"))+
+  labs(color = "*S. aureus* BSI")+
+  scale_x_discrete(labels = c("Infant Day 1" = "Day 3", "Infant Day 28" = "Day 30"))
+
+set.seed(123)
+p3 <- primal_sa_df %>% 
+  filter(!is.na(timepoint_category), timepoint_category!="DOL >456") %>% 
+  ggplot(aes(y = rel_ab*100, x = timepoint_category)) +
+  geom_line(aes(group = subject_id), alpha = 0.4) +
+  geom_boxplot(outlier.shape = NA, fill = "gray90", width = 0.6) +
+  geom_jitter(aes(color=color_group), width = 0.2, height = 0, alpha = 0.8, size = 2) +
+  scale_y_log10(
+    breaks = c(0.01, 0.1, 1, 10, 100),  # breaks at 0.1%, 1%, 10%, 100%
+    labels = label_percent(scale = 1, accuracy = 0.01)  # format as %
+  ) +
+  ylab("relative abundance in metaG") +
+  xlab("") +
+  ggtitle("PRIMAL: *S. aureus*")+
+  theme_minimal(base_size = 14) +
+  theme(title=element_markdown(), axis.title.y =element_markdown(),
+    #axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.minor = element_blank(), legend.position = "bottom", legend.title.position = "top", legend.title = element_markdown()
+  )+
+  labs(color = "")+
+  scale_color_manual(
+  values = c("Culture negative" = "#969696",
+             "Culture positive" = "#88C9BF",
+             "BSI positive" = "#CC00CC"),
+  labels = c("Culture positive", "BSI positive")  # Only show these in the legend
+) +
+   scale_x_discrete(labels = c("DOL 1-8" = "DOL: 1-8",  "DOL 9-42" = "9-42", "DOL 43-455" = "43-455"))+ #"DOL\n1-8"
+guides(color = guide_legend(
+  override.aes = list(
+    color = c("#88C9BF", "#CC00CC","#969696")  # match the colors you keep in the legend
+  )
+))
+
+p3
+
+```
+
+```{r}
+
+md_krinko <- md_krinko %>%
+  mutate(s_aureus_pos_mibi = case_when(
+    grepl("staph", x1_bakt, ignore.case = TRUE) ~ TRUE,
+    grepl("staph", x2_bakt, ignore.case = TRUE) ~ TRUE,
+    grepl("staph", x3_bakt, ignore.case = TRUE) ~ TRUE,
+    TRUE ~ FALSE
+  ))
+
+# Summarize Culture Data (md_krinko)
+culture_summary <- md_krinko %>%
+  count(Detection = s_aureus_pos_mibi) %>%  # replace 's_aureus_pos' with the right var
+  mutate(
+    method = "Culture",
+    percent = n / sum(n) * 100
+  )
+
+# Summarize metaG Data (ps_metaG)
+metaG_summary <- primal_sa_df%>%
+  filter(timepoint_category=="DOL 9-42") %>% 
+  count(Detection = s_aureus_pos) %>%  # or your metaG detection var
+  mutate(
+    method = "metaG",
+    percent = n / sum(n) * 100
+  )
+
+# Combine summaries
+ps_summary_combined <- bind_rows(culture_summary, metaG_summary)
+
+# Plot
+p1 <- ggplot(ps_summary_combined, aes(x = method, y = n, fill = Detection)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(
+    aes(label = paste0(round(percent, 1), "%")),
+    position = position_stack(vjust = 0.5),
+    color = "black",
+    size = 4
+  ) +
+  labs(
+    x = "", 
+    y = "Number of samples", 
+    title = "PRIMAL: *S. aureus* detection", 
+    fill = ""  # remove legend title
+  ) +
+  scale_x_discrete(labels = c("Culture" = "by Culture", "metaG" = "by metaG")) +  # change x-axis labels
+  scale_fill_manual(
+    values = c("TRUE" = "#88C9BF", "FALSE" = "grey"),
+    labels = c("TRUE" = "Positive", "FALSE" = "Negative")  # change legend labels
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_markdown()  # correct theme element for title markdown
+  )
+p1
+```
+
+# combine plots
+```{r, fig.height=8, fig.width=12}
+
+# new depth-adjusted S.aureus prevalence
+p4 <- readRDS("depth_standardized_S.aureus_prevalence.rds")
+
+p5 <- p5+ theme(legend.position = "none")
+
+p6 <- ggarrange(p4,p5, common.legend = T, legend = "bottom")
+
+
+draft <- grid.arrange(
+  p1+theme(legend.position = "top")+labs(tag = "a"),
+  p2+theme(legend.position = "top")+labs(tag = "b"),
+   p3+theme(legend.position = "top")+ labs(tag = "c"), #3
+   p6+ labs(tag = "d"), #1
+  ncol = 6, nrow = 2,
+  heights = c(1, 1.2),
+  #widths=c(0.75,1,1.55),
+  layout_matrix = rbind(c(1,1,2,2,3,3),
+                        c(4,4,4,4,4,4)
+                       ))
+
+fig <- grid.arrange(
+  p1+theme(legend.position = "none")+labs(tag = "a"),
+  p2+theme(legend.position = "none")+labs(tag = "b"),
+   p3+theme(legend.position = "none")+ labs(tag = "c"), #3
+   p4+ ggtitle("Meta analysis:")+labs(tag = "d"), #1
+  p5+ ggtitle("Meta analysis:")+ labs(tag = "e"),
+  ncol = 6, nrow = 2,
+  heights = c(1, 1.2),
+  #widths=c(0.75,1,1.55),
+  layout_matrix = rbind(c(1,1,2,2,3,3),
+                        c(4,4,4,5,5,5)
+                       ))
+
+#ggsave("/Users/rebecca/Documents/Forschung/S_aureus_letter/fig_1.pdf", fig,  width = 12, height = 8)
+```
+
+# calculate significance for the GNN cohort for BSI+central line
+```{r}
+# Make the contingency table
+tbl <- matrix(c(259, 77, 
+                14078, 7413), 
+              nrow = 2, byrow = TRUE)
+
+# Add row/col names for clarity
+rownames(tbl) <- c("BSI", "Non_BSI")
+colnames(tbl) <- c("Central_line", "No_central_line")
+
+tbl
+
+# Run chi-square test
+chisq.test(tbl)
+
+# If you want Fisher's exact test as well (more conservative)
+fisher.test(tbl)
+```
+
+```{r}
+# Make the contingency table
+tbl_primal <- matrix(c(1, 2,    # BSI: central line vs no central line
+                       286, 332), # Non-BSI: central line vs no central line
+                     nrow = 2, byrow = TRUE)
+
+# Add row/col names for clarity
+rownames(tbl_primal) <- c("BSI", "Non_BSI")
+colnames(tbl_primal) <- c("Central_line", "No_central_line")
+
+tbl_primal
+
+# Run Fisher's exact test
+fisher.test(tbl_primal)
+```

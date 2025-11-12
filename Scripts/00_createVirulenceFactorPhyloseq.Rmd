@@ -1,0 +1,313 @@
+---
+title: "Build S.aureus virulence factors phyloseq "
+author: "Rebecca L. Knoll"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This script builds the phyloseq for the Staphylococcus-associated virulence factors. The raw data can be requested upon request.
+
+
+```{r}
+library(tidyverse)
+library(phyloseq)
+```
+
+```{r}
+cohort_colors <- c(
+  "PRIMAL"     = "#88C9BF",
+  "Gibson"     = "#D9D9D9",
+  "Rahman"     = "#BDBDBD",
+  "Gasparrini" = "#969696",
+  "Morrow"     = "#636363",
+  "Pärnanen"   = "#4D4D4D"
+)
+```
+
+## load data 
+```{r}
+v1 <- read.delim("/Users/rebecca/Documents/Forschung/preterm_metaG_analysis/data/vfdb/VFDB.StaphAureus.considered.tsv")
+
+v2 <- read.delim("/Users/rebecca/Documents/Forschung/preterm_metaG_analysis/data/vfdb/VFDB.StaphAureus.matrix.tsv") # has 239 samples
+
+v3 <- read.delim("/Users/rebecca/Documents/Forschung/preterm_metaG_analysis/data/vfdb/VFDB.StaphAureus.SPIRE.considered.tsv")
+
+v4 <- read.delim("/Users/rebecca/Documents/Forschung/preterm_metaG_analysis/data/vfdb/VFDB.StaphAureus.SPIRE.matrix.tsv") # has 214 samples
+
+summary(as_factor(v1$Cohort))
+summary(as_factor(v3$Cohort))
+```
+# add correct sample names for metaG Run Feb'25
+```{r}
+library(readxl)
+xl_1 <- read_excel("/Users/rebecca/Documents/Forschung/PRIMAL/metaG_seq_2025/Liste für Novogene_14.02.2025.xlsx")
+xl_2 <- read_excel("/Users/rebecca/Documents/Forschung/PRIMAL/metaG_seq_2025/04.03.2025 qc plus 4  NC plus 10 duplikates.xlsx")
+xl_1 <- janitor::clean_names(xl_1)
+
+xl_2 <- xl_2 %>% 
+  mutate(no_novogene = as.numeric(gsub("A0*", "", `Sample Name`))) # removes 'A' and leading 0s
+
+xl_1 <- xl_1 %>% 
+  full_join(xl_2, by="no_novogene") %>% 
+  mutate(mainz_id_x= case_when(is.na(mainz_id_x)~`Nucleic Acid ID`, T~mainz_id_x))
+
+xl_1 <- xl_1%>% 
+  filter(!is.na(mainz_id_x))
+
+primal_md <-  read.csv("~/Documents/Forschung/preterm_metaG_analysis/data/Metadata/PRIMAL_master_metadata_20250402.csv")
+
+md_n3 <- primal_md %>% 
+  select(primalID, mainzID.x) %>% 
+  filter(!is.na(primalID))
+
+n3_names <- xl_1 %>% 
+  left_join(md_n3, by=c("mainz_id_x"="mainzID.x")) %>% 
+  mutate(sample_name= paste("A", no_novogene, sep = "")) %>% 
+  mutate(cat_sample_name= paste0("X",primalID,".N3")) %>% 
+  select(sample_name, cat_sample_name, mainz_id_x)
+
+n3 <- v1 %>% 
+  filter(Cohort=="PRIMAL3") 
+
+n3_samples <- n3 %>% 
+  left_join(n3_names, by=c("mainzID"="mainz_id_x"))
+
+#write_csv2(n3_samples, "/Users/rebecca/Documents/Forschung/PRIMAL/metaG_seq_2025/correct_PRIMAL3_names.csv")
+
+```
+
+# rename PRIMAL samples to the sample names used in the S.aureus prevalence testing
+
+```{r}
+# first merge into one single data set
+
+vfdb <- v2 %>% left_join(v4, by= c("Category", "VF_short", "VF_long","GENE")) # 
+
+md <- v1 %>% 
+  rename(Sample = ID) %>% 
+  select(Cohort, Sample) %>% 
+  rbind(v3)
+
+md %>% 
+  count(Cohort)
+```
+# select the samples that were also considered for the S.aureus prevalence and abundance testing
+```{r}
+ps_all_clean <- readRDS("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/mOTU_catalogue_totalReadcount.rds")
+
+meta_all_df_clean <- as(sample_data(ps_all_clean), "data.frame")
+
+# lets now filter the vfdb to the cohorts that have been used in the S.aureus detection:
+md_fil <- md %>% 
+ filter(Cohort%in% c(meta_all_df_clean$study_id, "PRIMAL1", "PRIMAL2", "PRIMAL3", "Replicates"))
+
+meta_all_df_clean <- meta_all_df_clean %>% 
+  rownames_to_column("Sample")
+
+md_fil_primal <- md_fil %>% 
+  mutate(cohort = if_else(str_detect(Sample, "PRIMAL|Replicates"), "PRIMAL", "US")) %>% 
+  filter(cohort == "PRIMAL")
+
+primal_samples <- md_fil %>%
+   filter(Cohort%in% c("PRIMAL1", "PRIMAL2", "PRIMAL3", "Replicates")) %>% 
+   separate(Sample, into = c("mainzID", "Cohort"), sep = "\\.\\.\\.", remove = F) %>% 
+ left_join(primal_md, by = c(c("mainzID"="mainzID.x"), "Cohort")) 
+
+primal_samples <- primal_samples%>% 
+  select(Study_id, primal_id_center, primalID_unique, Cohort, mainzID, Sample.x)
+
+PRIMAL_cat <- meta_all_df_clean %>% 
+  filter(study_id=="PRIMAL")
+
+primal3 <- PRIMAL_cat %>% 
+  left_join(primal_samples, by= c("sample_id" ="Study_id")) %>% 
+  filter(is.na(primal_id_center)) %>% 
+  left_join(n3_samples, by=c("Sample"="cat_sample_name")) %>% 
+  select(Sample, ID, primal_id_center) %>% 
+  separate(ID, into = c("mainzID", "Cohort"), sep = "\\.\\.\\.", remove = F) %>% 
+  mutate(primal_id_center=gsub("X", "", Sample))
+
+# This pastes the study ID for PRIMAL 1, PRIMAL 2 and Replicates
+primal1_2 <- PRIMAL_cat %>%
+  left_join(primal_samples %>% select(-Cohort), by= c("sample_id" ="Study_id")) %>% 
+  select(mainzID, Cohort, primal_id_center, Sample, Sample.x) %>% 
+  filter(!is.na(mainzID))%>% 
+  left_join(v1, by=c("mainzID","Cohort")) %>% 
+  select(mainzID, Cohort, primal_id_center, ID, Sample, Sample.x)%>% 
+  mutate(ID = case_when(is.na(ID)~Sample.x, T~ID)) %>% 
+  select(colnames(primal3))
+
+final_primal_ids <- rbind(primal1_2, primal3) 
+
+final_primal_ids_fil <- final_primal_ids %>% 
+  filter(Sample%in%c(PRIMAL_cat$Sample)) %>% 
+  distinct(Sample, .keep_all = T)
+
+#write.csv(final_primal_ids, "primal_sample_ids_virulenceGenes.csv")
+# add these to the catalogue metadata
+md_cat_new <- meta_all_df_clean %>% 
+  left_join(final_primal_ids_fil %>% select(Sample,ID), by= "Sample")
+
+# retain only the samples that were also tested for S.aureus prevalence
+v1_fil <- v1 %>% 
+  filter(ID %in% final_primal_ids_fil$ID)
+
+v3_fil <- v3 %>% 
+  filter(Sample %in% meta_all_df_clean$Sample)
+
+matched_samples <- c(v1_fil$ID, v3_fil$Sample)
+```
+
+# I want to increase presence/absence matrix with the samples that didn’t hit any virulence gene 
+→ those samples should appear as all zeros across every gene.
+```{r}
+normalize_samples <- function(samples) {
+  samples %>%
+    # Replace "-<digit(s)>..." before cohort with ".<digit(s)>..."
+    str_replace("-(\\d+)(\\.\\.\\..+)$", ".\\1\\2")
+}
+
+normalize_samples <- function(samples) {
+  samples %>%
+    # turn "-<digits> [anything until ...]" into ".<digits>"
+    str_replace("-(\\d+).*?(\\.\\.\\..+)$", ".\\1\\2")
+}
+
+# Get current sample names in matrix
+present_samples <- colnames(vfdb[5:449])
+
+# ---- Apply normalization ----
+matched_norm <- normalize_samples(matched_samples)
+present_norm <- normalize_samples(present_samples)
+
+# ---- Compare ----
+common <- intersect(matched_norm, present_norm) # 363 are shared
+only_in_matched <- setdiff(matched_norm, present_norm) # 1411 samples are only in matched
+only_in_present <- setdiff(present_norm, matched_norm) # 82 samples where not considered in the S.aureus analysis and should be removed
+
+# 1. Keep only samples that are in matched_samples
+vfdb_mat_filtered <- vfdb[, intersect(present_norm, matched_norm), drop = FALSE]
+
+# 2. Find samples missing in vfdb_mat but present in matched_samples
+missing_samples <- setdiff(matched_norm, colnames(vfdb_mat_filtered))
+
+# 3. Create zero-filled matrix for missing samples
+zero_mat <- matrix(
+  0,
+  nrow = nrow(vfdb_mat_filtered),
+  ncol = length(missing_samples),
+  dimnames = list(rownames(vfdb), missing_samples)
+)
+
+vfdb_mat <- cbind(vfdb_mat_filtered, zero_mat)
+
+#vfdb_mat[vfdb_mat > 1] <- 1 # this truly sets all genes to presence/absence = 1 vs 1
+
+# Bind missing samples to existing matrix
+vfdb_full <- cbind(vfdb[,1:4], vfdb_mat) # add gene names again
+
+```
+
+
+
+# first visu
+```{r}
+mat <- vfdb_full %>% 
+  select(GENE, 4:1778)
+
+# Step 1: Sum across samples
+gene_counts <- mat %>%
+  rowwise() %>%
+  mutate(count = sum(c_across(-GENE))) %>%
+  ungroup() %>%
+  select(GENE, count)
+
+# Step 2: Plot barplot
+ggplot(gene_counts, aes(x = reorder(GENE, count), y = count)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +  # flips axes so genes are on y-axis
+  labs(x = "Gene", y = "Number of samples with gene present",
+       title = "Virulence gene presence across samples") +
+  theme_minimal()
+```
+
+```{r}
+# 1. Reshape into long format
+df_long <- mat %>%
+  pivot_longer(-GENE, names_to = "Sample", values_to = "Gene count")
+
+md_cat_new$ID <- normalize_samples(md_cat_new$ID)
+
+md_cat_new <- md_cat_new %>% 
+  mutate(ID = case_when(is.na(ID)~Sample, T~ID))
+
+df_long <- df_long %>% 
+  left_join(md_cat_new, by=c("Sample"="ID")) %>% 
+  select(GENE, Sample, `Gene count`, reads, Cohort )
+
+# 2. Define cohorts
+#df_long <- df_long %>%
+ # mutate(Cohort = if_else(str_detect(Sample, "PRIMAL|Replicates"), "PRIMAL", Cohort)) %>% 
+ # mutate(Cohort_2 = if_else(str_detect(Sample, "PRIMAL|Replicates"), "PRIMAL", "US"))
+
+df_long %>% 
+  count(Cohort)
+
+df_long %>% 
+  filter(Cohort=="PRIMAL") %>% 
+  distinct(Sample)
+
+# 3. Count number of samples per gene & cohort
+gene_counts <- df_long %>%
+  filter(`Gene count` >= 1) %>%
+  group_by(GENE, Cohort) %>%
+  summarise(count = n(), .groups = "drop")
+
+# 4. Plot grouped barplot
+ggplot(gene_counts, aes(x = reorder(GENE, -count), y = count, fill = Cohort)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  labs(x = "Gene", y = "Number of samples with gene present",
+       title = "Virulence genes by cohort") +
+  theme_minimal()
+```
+# build a phyloseq
+```{r}
+vfdb_full
+
+otu_ps <- vfdb_full %>% 
+  select(GENE, 4:1778) 
+otu_ps <- data.frame(otu_ps)
+
+rownames(otu_ps) <- NULL
+
+otu_ps <- otu_ps %>% 
+  column_to_rownames("GENE")
+
+otu_ps <-  otu_table(otu_ps,taxa_are_rows = T)
+
+# tax table
+tax <- vfdb_full %>% 
+  select(GENE,Category, VF_short, VF_long)
+
+tax <- data.frame(tax)
+rownames(tax) <- NULL
+tax <- tax %>% 
+  column_to_rownames("GENE")
+
+tax <- as.matrix(tax)
+tax <- tax_table(tax)
+
+# meta data
+sam_data <- md_cat_new %>% 
+  column_to_rownames("ID")
+sam_data <- sample_data(sam_data)
+
+ps <- phyloseq(tax, otu_ps, sam_data)
+
+write_rds(ps, "vfdb_phyloseq.rds")
+```

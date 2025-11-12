@@ -1,9 +1,12 @@
 ---
 title: "Prevalences adjusted to sequencing depth to increase comparability across studies"
-author: "Rebecca L. Knoll"
+author: "Daniel Podlesny & Rebecca L. Knoll"
 date: "`r Sys.Date()`"
 output: html_document
 ---
+
+This script calculates and visualizes *S.aureus* sequencing depth to median sequencing depth and compares different sequencing depth adjustments to the alternative of rarefied S.aureus counts resulting from the rarefied_sequencingDepth.Rmd script
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -21,7 +24,7 @@ library(ggtext)
 
 
 ```{r}
-psmelt_genus <- readRDS( "/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/S.aureus_only_dataframe.rds")
+psmelt_genus <- readRDS("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/S.aureus_only_dataframe.rds")
 ```
 
 ```{r}
@@ -98,7 +101,7 @@ adj_rel   = adj_count_median / D_star
 
   )
 
-write_csv(df_std, "s_aureus_adjusted_sequencing_depth.csv")
+#write_csv(df_std, "s_aureus_adjusted_sequencing_depth.csv")
 ```
 
 ```{r}
@@ -445,7 +448,7 @@ df_for_plot %>%
         panel.spacing = unit(1, "lines")) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
-ggsave("total_seq_depzh.pdf", width = 8, height = 5)
+#ggsave("total_seq_depzh.pdf", width = 8, height = 5)
 ```
 
 # plot tax sequencing depths per timepoint and study
@@ -476,7 +479,7 @@ df_for_plot %>%
         panel.spacing = unit(1, "lines")) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
-ggsave("tax_seq_depth.pdf", width = 8, height = 5)
+#ggsave("tax_seq_depth.pdf", width = 8, height = 5)
 ```
 
 # ratio of tax vs total seq depth
@@ -509,7 +512,7 @@ df_for_plot %>%
   guides(fill = guide_legend(nrow = 1, position = "bottom"))+
   ggpubr::stat_compare_means(method = "kruskal", aes(group=study_short))
 
-ggsave("ratio_seq_depth.pdf", width = 8, height = 5)
+#ggsave("ratio_seq_depth.pdf", width = 8, height = 5)
 ```
 
 ```{r}
@@ -555,7 +558,7 @@ df_std %>%
     
   )
 
-ggsave("depth_adjustement_effect_saureus_detection.pdf", height = 4, width = 7)
+#ggsave("depth_adjustement_effect_saureus_detection.pdf", height = 4, width = 7)
 
 ```
 
@@ -844,14 +847,14 @@ p1 <- ggplot(prev_summary, aes(x = x_key, fill = study_short)) +
         panel.spacing = unit(1, "lines"), legend.position = "none") #+
  # guides(fill = guide_legend(nrow = 1, position = ""))
 p1
-#ggsave("prevalence_depth_standardized_s_aureus.pdf", height = 5, width = 8)
-saveRDS(p1, "depth_standardized_S.aureus_prevalence.rds")
+##ggsave("prevalence_depth_standardized_s_aureus.pdf", height = 5, width = 8)
+#saveRDS(p1, "depth_standardized_S.aureus_prevalence.rds")
 ```
 # compare prevalences across seq Depth to rarefied
 ```{r}
 # compare prevalences across seq Depth to rarefied
 
-rare <- read_delim("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/rarefied_q1_seq_depth_prevalence.csv")
+rare <- read_delim("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/rarefied_1q_seq_depth_prevalence.csv")
 
 rare %>% 
   group_by(timepoint_category) %>%
@@ -906,6 +909,6 @@ ggplot(prev_summary, aes(x = x_key, fill = study_short)) +
         panel.spacing = unit(1, "lines")) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
-ggsave("prevalence_nonadjusted_aureus.pdf", height = 5, width = 8)
+#ggsave("prevalence_nonadjusted_aureus.pdf", height = 5, width = 8)
 ```
 
