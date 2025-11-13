@@ -7,11 +7,15 @@ by Rebecca L. Knoll, MD, Daniel Podlesny, PhD, Ingmar Fortmann, MD, Wolfgang Gö
 
 ## Repository Content:
 
-Scripts/	        .Rmd files ordered according to the analysis presented in the manuscript. Includes all code for statistical tests and figure generation to fully reproduce the findings.
-Data/	            Annotated data necessary to reproduce all statistical analyses.
-renv.lock	        Captures the exact package versions used in the project.
+Scripts/ .Rmd files ordered according to the analysis presented in the manuscript. Includes all code for statistical tests and figure generation to fully reproduce the findings.
+
+Data/ Annotated data necessary to reproduce all statistical analyses.
+
+renv.lock Captures the exact package versions used in the project.
+
 renv/settings.json	Stores renv environment settings.
-.Rproj	            Facilitates structured project organization in RStudio.
+
+.Rproj Facilitates structured project organization in RStudio.
 
 ## Raw Data Availability:
     Raw sequencing data will be made available upon request.
