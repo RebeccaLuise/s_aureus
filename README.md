@@ -5,18 +5,15 @@ This repository contains all code and data used for the analysis reported in the
 “*Staphylococcus aureus* colonization and bloodstream infection in very preterm infants”
 by Rebecca L. Knoll, MD, Daniel Podlesny, PhD, Ingmar Fortmann, MD, Wolfgang Göpel, MD, Michael Zemlin, Susan Lynch, PhD, Peer Bork, PhD, Stephan Gehring, MD, Christoph Härtel, MD.
 
-Repository Content:
+## Repository Content:
 
-    | Folder / File          | Description                                                                                                                                                                |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Scripts/**           | `.Rmd` files ordered according to the analysis presented in the manuscript. Includes all code for statistical tests and figure generation to fully reproduce the findings. |
-| **Data/**              | Annotated data necessary to reproduce all statistical analyses.                                                                                                            |
-| **renv.lock**          | Captures the exact package versions used in the project.                                                                                                                   |
-| **renv/settings.json** | Stores renv environment settings.                                                                                                                                          |
-| **.Rproj**             | Facilitates structured project organization in RStudio.                                                                                                                    |
+Scripts/	        .Rmd files ordered according to the analysis presented in the manuscript. Includes all code for statistical tests and figure generation to fully reproduce the findings.
+Data/	            Annotated data necessary to reproduce all statistical analyses.
+renv.lock	        Captures the exact package versions used in the project.
+renv/settings.json	Stores renv environment settings.
+.Rproj	            Facilitates structured project organization in RStudio.
 
-
-Raw Data Availability:
+## Raw Data Availability:
     Raw sequencing data will be made available upon request.
 
 ## Reproducibility Guide:
