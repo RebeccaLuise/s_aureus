@@ -60,3 +60,5 @@ To ensure full reproducibility, this repository includes an `renv.lock` file. Fo
 ### Running the Scripts
 Once dependencies are installed, the `.Rmd` files can be run sequentially to reproduce the full analysis, including all statistical tests and visualizations. Open the `.Rproj` file in RStudio for an organized workflow.
 
+### Zenodo DOI for publication: DOI
+DOI 10.5281/zenodo.17603738
