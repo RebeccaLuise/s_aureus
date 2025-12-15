@@ -1,9 +1,11 @@
 # *Staphylococcus aureus* colonization and bloodstream infection in very preterm infants
 
-This repository contains all code and data used for the analysis reported in the publication:
+This repository contains all code and data used for the analysis reported in the publication: 
 
 “*Staphylococcus aureus* colonization and bloodstream infection in very preterm infants”
 by Rebecca L. Knoll, MD, Daniel Podlesny, PhD, Ingmar Fortmann, MD, Wolfgang Göpel, MD, Michael Zemlin, Susan Lynch, PhD, Peer Bork, PhD, Stephan Gehring, MD, Christoph Härtel, MD.
+
+https://doi.org/10.1080/19490976.2025.2592423
 
 ## Repository Content:
 
