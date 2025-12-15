@@ -27,11 +27,11 @@ setwd("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_
 
 # load data
 ```{r}
-ps_aureus <- readRDS("Data/S.aureus_only_phyloseq.rds")
+ps_aureus <- readRDS("~/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/S.aureus_only_phyloseq_20251211.rds")
 
-krinko_o <- read_delim("Data/clean_mdro_mainz_data_20250114.csv")
+krinko_o <- read_delim("~/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/clean_mdro_mainz_data_20250114.csv")
 
-primal_md <-  read.delim("Data/primal_metadata.csv", sep = ",")
+primal_md <-  read.delim("~/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/primal_metadata.csv", sep = ",")
 ```
 
 ```{r}
@@ -44,61 +44,50 @@ aureus_df <- psmelt_genus
 ```
 
 ```{r}
+# --- Define the fixed order (must match your palette keys) ---
+study_order <- c("PRIMAL","Gibson","Rahman","Gasparrini","Morrow","Pärnanen")
+time_levels <- c("DOL 1-8","DOL 9-42","DOL 43-455")
 
 aureus_df <- aureus_df %>%
-  mutate(rel_ab = Abundance/total_reads) 
+  mutate(rel_ab = Abundance/total_reads) %>% 
+  mutate(study_short = case_when(study_id=="Gasparrini_2019_infant"~"Gasparrini",study_id=="Gibson_2016_preterm"~"Gibson",study_id=="Morrow_2016_preterm_infants"~"Morrow",study_id=="Parnanen_2019_infant"~"Pärnanen", study_id=="Rahman_2018_preterm_NICU"~"Rahman", T~study_id))
+
+aureus_df$study_short <- factor(aureus_df$study_short, levels=c("PRIMAL","Gibson","Rahman",  "Gasparrini",  "Morrow", "Pärnanen"))
 
 n_df <- aureus_df %>%
-  group_by(study_id, timepoint_category) %>%
+  group_by(study_id, DOL_category) %>%
   summarise(n_samples = n())
 
 aureus_df <- aureus_df  %>% 
-  mutate(study_short = case_when(study_id=="Gasparrini_2019_infant"~"Gasparrini",study_id=="Gibson_2016_preterm"~"Gibson",study_id=="Morrow_2016_preterm_infants"~"Morrow",study_id=="Parnanen_2019_infant"~"Pärnanen", study_id=="Rahman_2018_preterm_NICU"~"Rahman", T~study_id)) %>% 
-  left_join(n_df, by=c("study_id", "timepoint_category")) %>% 
-  mutate(x_label = paste0(study_short, ", N=", n_samples))
+  left_join(n_df, by=c("study_id", "DOL_category")) %>% 
+  mutate(study_short = factor(study_short, levels = study_order),
+         x_label = paste0(study_short, ", N=", n_samples),
+    x_key   = paste(DOL_category, x_label, sep = "|"))
 
-aureus_df$study_short <- factor(aureus_df$study_short, levels=c("PRIMAL","Gibson","Rahman",  "Gasparrini",  "Morrow", "Pärnanen"))
+levels_abund <- aureus_df %>%
+  arrange(DOL_category, study_short) %>%
+  pull(x_key) %>% unique()
+
+aureus_df <- aureus_df %>%
+  mutate(x_key = factor(x_key, levels = levels_abund))
   
-# Calculate medians per facet (timepoint_category)
+# Calculate medians per facet (DOL_category)
 hline_data_relab <- aureus_df%>%
-  group_by(timepoint_category) %>%
+  group_by(DOL_category) %>%
   summarise(hline_y = round(mean(rel_ab*100, na.rm = TRUE), digits = 5))
-hline_data_relab$timepoint_category <- factor(hline_data_relab$timepoint_category, 
+hline_data_relab$DOL_category <- factor(hline_data_relab$DOL_category, 
                                               levels = c("DOL 1-8", "DOL 9-42", "DOL 43-455"))
 
+aureus_df$DOL_category<- factor(aureus_df$DOL_category, levels=c("DOL 1-8", "DOL 9-42", "DOL 43-455"))
 
-x_label_levels <- c( "PRIMAL, N=232", 
-  "PRIMAL, N=50", 
-  "PRIMAL, N=434",
-  "Gibson, N=201", 
-  "Gibson, N=32", 
-  "Gibson, N=161",
-  "Rahman, N=94", 
-  "Rahman, N=14", 
-  "Rahman, N=193",
-  "Gasparrini, N=51", 
-  "Gasparrini, N=137", 
-  "Gasparrini, N=64",
-  "Morrow, N=60", 
-  "Morrow, N=20",
-  "Pärnanen, N=38",
-  "Pärnanen, N=1"
-)
-
-
-aureus_df$x_label <- factor(aureus_df$x_label, levels = x_label_levels)
-
-
-aureus_df$timepoint_category<- factor(aureus_df$timepoint_category, levels=c("DOL 1-8", "DOL 9-42", "DOL 43-455"))
-
-p5 <- ggplot(aureus_df, aes(x = x_label, y = rel_ab* 100, fill = study_short)) +
+p5 <- ggplot(aureus_df, aes(x = x_key, y = rel_ab* 100, fill = study_short)) +
   geom_boxplot(outlier.shape = NA, width = 0.6) +
   scale_y_log10(
     breaks = c(0.01, 0.1, 1, 10, 100), # breaks at 0.1%, 1%, 10%, 100%
     labels = c("0.01", "0.1", "1", "10", "100")  # format as %
   ) +
   scale_fill_manual(values = c("#88C9BF", "#D9D9D9", "#BDBDBD", "#969696", "#636363", "#4D4D4D")) +
-  facet_grid(~timepoint_category, scales = "free_x", space = "free") +
+  facet_grid(~DOL_category, scales = "free_x", space = "free") +
   theme_minimal(base_size = 14) +
   theme(
     strip.background = element_rect(fill = "#F0F0F0", colour = "black"),
@@ -113,7 +102,8 @@ p5 <- ggplot(aureus_df, aes(x = x_label, y = rel_ab* 100, fill = study_short)) +
     x = ""
   ) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))+
-  geom_hline(data = hline_data_relab, aes(yintercept = hline_y), colour = "black", linetype = 2)
+  geom_hline(data = hline_data_relab, aes(yintercept = hline_y), colour = "black", linetype = 2)+
+  scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x))
 p5
 
 aureus_df %>% 
@@ -132,8 +122,8 @@ aureus_df %>%
 # continous analysis 
 ```{r}
 aureus_df%>% 
-  filter(timepoint<=42) %>% 
-  ggplot(aes(x=timepoint+1, y=(rel_ab*100), color=study_short))+
+  filter(age_days<=42) %>% 
+  ggplot(aes(x=age_days, y=(rel_ab*100), color=study_short))+
   geom_point(alpha=0.8)+
   scale_y_log10(
     breaks = c(0.01, 0.1, 1, 10, 100),  # breaks at 0.1%, 1%, 10%, 100%
@@ -221,12 +211,12 @@ primal_sa_df <- primal_sa_df %>%
 
 primal_sa_df %>%
   group_by(s_aureus_pos) %>% # prevalence in metaG
-  count(timepoint_category)
+  count(DOL_category)
 
 plot_df <- primal_sa_df %>%
-  group_by(timepoint_category, s_aureus_pos) %>%
+  group_by(DOL_category, s_aureus_pos) %>%
   summarise(n = n(), .groups = "drop") %>%
-  group_by(timepoint_category) %>%
+  group_by(DOL_category) %>%
   mutate(percent = 100 * n / sum(n))
 
 primal_sa_df <- primal_sa_df %>%
@@ -354,7 +344,7 @@ summary(model)
 # Subanalyze LOS sepsis cases and their results in screenings
 ```{r}
 
-primal_sa_df$timepoint_category <- factor(primal_sa_df$timepoint_category , levels=c("DOL 1-8", "DOL 9-42", "DOL 43-455"))
+primal_sa_df$DOL_category <- factor(primal_sa_df$DOL_category , levels=c("DOL 1-8", "DOL 9-42", "DOL 43-455"))
 
 primal_sa_df<- primal_sa_df%>%
   mutate(color_group = case_when(
@@ -364,8 +354,8 @@ primal_sa_df<- primal_sa_df%>%
   ))
 
 primal_sa_df %>% 
-  filter(!is.na(timepoint_category), timepoint_category!="DOL >456") %>% 
-  ggplot(aes(y = rel_ab*100, x = timepoint_category)) +
+  filter(!is.na(DOL_category), DOL_category!="DOL >456") %>% 
+  ggplot(aes(y = rel_ab*100, x = DOL_category)) +
  # geom_line(aes(group = ), alpha = 0.4) +
   geom_boxplot(outlier.shape = NA, fill = "gray90", width = 0.6) +
   geom_jitter(aes(color=S.aureus_LOS), width = 0.2, height = 0, alpha = 0.6, size = 2) +
@@ -386,8 +376,8 @@ primal_sa_df %>%
 
 set.seed(123)
 p3 <- primal_sa_df %>% 
-  filter(!is.na(timepoint_category), timepoint_category!="DOL >456") %>% 
-  ggplot(aes(y = rel_ab*100, x = timepoint_category)) +
+  filter(!is.na(DOL_category), DOL_category!="DOL >456") %>% 
+  ggplot(aes(y = rel_ab*100, x = DOL_category)) +
   geom_line(aes(group = subject_id), alpha = 0.4) +
   geom_boxplot(outlier.shape = NA, fill = "gray90", width = 0.6) +
   geom_jitter(aes(color=color_group), width = 0.2, height = 0, alpha = 0.8, size = 2) +
@@ -441,7 +431,7 @@ culture_summary <- md_krinko %>%
 
 # Summarize metaG Data (ps_metaG)
 metaG_summary <- primal_sa_df%>%
-  filter(timepoint_category=="DOL 9-42") %>% 
+  filter(DOL_category=="DOL 9-42") %>% 
   count(Detection = s_aureus_pos) %>%  # or your metaG detection var
   mutate(
     method = "metaG",
@@ -483,7 +473,7 @@ p1
 ```{r, fig.height=8, fig.width=12}
 
 # new depth-adjusted S.aureus prevalence
-p4 <- readRDS("depth_standardized_S.aureus_prevalence.rds")
+p4 <- readRDS("~/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/depth_standardized_S.aureus_prevalence_20251211.rds")
 
 p5 <- p5+ theme(legend.position = "none")
 
@@ -515,7 +505,7 @@ fig <- grid.arrange(
                         c(4,4,4,5,5,5)
                        ))
 
-#ggsave("/Users/rebecca/Documents/Forschung/S_aureus_letter/fig_1.pdf", fig,  width = 12, height = 8)
+ggsave("/Users/rebecca/Documents/Forschung/S_aureus_letter/fig_1_20251211.pdf", fig,  width = 12, height = 8)
 ```
 
 # calculate significance for the GNN cohort for BSI+central line

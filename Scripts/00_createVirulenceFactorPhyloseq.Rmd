@@ -97,7 +97,7 @@ md %>%
 ```
 # select the samples that were also considered for the S.aureus prevalence and abundance testing
 ```{r}
-ps_all_clean <- readRDS("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/mOTU_catalogue_totalReadcount.rds")
+ps_all_clean <- readRDS("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/mOTU_catalogue_totalReadcount_20251211.rds")
 
 meta_all_df_clean <- as(sample_data(ps_all_clean), "data.frame")
 
@@ -217,7 +217,7 @@ vfdb_full <- cbind(vfdb[,1:4], vfdb_mat) # add gene names again
 # first visu
 ```{r}
 mat <- vfdb_full %>% 
-  select(GENE, 4:1778)
+  select(GENE, 4:1768)
 
 # Step 1: Sum across samples
 gene_counts <- mat %>%
@@ -280,7 +280,7 @@ ggplot(gene_counts, aes(x = reorder(GENE, -count), y = count, fill = Cohort)) +
 vfdb_full
 
 otu_ps <- vfdb_full %>% 
-  select(GENE, 4:1778) 
+  select(GENE, 4:1768) 
 otu_ps <- data.frame(otu_ps)
 
 rownames(otu_ps) <- NULL
@@ -309,5 +309,5 @@ sam_data <- sample_data(sam_data)
 
 ps <- phyloseq(tax, otu_ps, sam_data)
 
-write_rds(ps, "vfdb_phyloseq.rds")
+write_rds(ps, "vfdb_phyloseq_20251211.rds")
 ```

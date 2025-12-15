@@ -24,19 +24,19 @@ library(ggtext)
 
 
 ```{r}
-psmelt_genus <- readRDS("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/S.aureus_only_dataframe.rds")
+psmelt_genus <- readRDS("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/S.aureus_only_dataframe_20251211.rds")
 ```
 
 ```{r}
 df <- psmelt_genus %>% 
-  select(Sample, Abundance, total_reads, reads, study_id, timepoint_category, subject_id, sample_alias)
+  select(Sample, Abundance, total_reads, reads, study_id, DOL_category, subject_id, sample_alias)
 
 which(is.na(df$subject_id))
 
 df <- df %>% 
   mutate(S_aureus = Abundance/total_reads) %>% # here we calculate relative abundance of S. aureus in the sample across all taxonomic counts (total reads) in the sample
   rename(Total_read_count= reads) %>% # this is the complete read count of the sample
-  rename(study=study_id, Timepoint=timepoint_category) %>% 
+  rename(study=study_id) %>% 
   rename(tax_reads = total_reads)
 
 ```
@@ -46,7 +46,7 @@ df <- df %>%
 df <- df %>%
   mutate(
     study = factor(study),
-    Timepoint = factor(Timepoint),
+    DOL_category = factor(DOL_category),
     Total_read_count = as.numeric(Total_read_count),
     S_aureus = as.numeric(S_aureus)
   ) %>%
@@ -68,6 +68,9 @@ df_std <- df %>%
       present   = as.integer(adj_count >= 1)
 
   )
+
+df_std %>% 
+  count(present)
 ```
 
 ## Calculate presence across different sequencing depth
@@ -78,8 +81,8 @@ D_star <- median(df$Total_read_count, na.rm = TRUE)
 D_star_min <- min(df$Total_read_count, na.rm = TRUE)
 
 summary(df$Total_read_count, na.rm = TRUE)
-D_star_1stQ <- 6397106
-D_star_3rdQ <- 57788480
+D_star_1stQ <- 6398418
+D_star_3rdQ <- 58149372
 D_star_max <- max(df$Total_read_count, na.rm = TRUE)
 
 df_std <- df %>%
@@ -101,7 +104,7 @@ adj_rel   = adj_count_median / D_star
 
   )
 
-#write_csv(df_std, "s_aureus_adjusted_sequencing_depth.csv")
+write_csv(df_std, "s_aureus_adjusted_sequencing_depth_20251211.csv")
 ```
 
 ```{r}
@@ -267,67 +270,67 @@ time_levels <- c("DOL 1-8","DOL 9-42","DOL 43-455")
 
 # Short names already built in df_std via short_map
 short_map
-# N per study×timepoint (for labels)
-n_by_group <- df_std %>% count(study, Timepoint, name = "N")
+# N per study×DOL_category (for labels)
+n_by_group <- df_std %>% count(study, DOL_category, name = "N")
 
 # =========================
-# A) PREVALENCE (≥1 read at D*) in fixed order (per Timepoint)
+# A) PREVALENCE (≥1 read at D*) in fixed order (per DOL_category)
 # =========================
 prev_by_study_tp <- df_std %>%
-  group_by(study, Timepoint) %>%
+  group_by(study, DOL_category) %>%
   summarise(prevalence = mean(present_median), .groups = "drop") %>%
-  left_join(n_by_group, by = c("study","Timepoint")) %>%
+  left_join(n_by_group, by = c("study","DOL_category")) %>%
   mutate(
     study_short = ifelse(study %in% names(short_map),
                          short_map[as.character(study)],
                          as.character(study)),
-    Timepoint = factor(Timepoint, levels = time_levels),
+    DOL_category = factor(DOL_category, levels = time_levels),
     study_short = factor(study_short, levels = study_order),
     x_label = paste0(as.character(study_short), ", N=", N),
-    x_key   = paste(Timepoint, x_label, sep = "|")
+    x_key   = paste(DOL_category, x_label, sep = "|")
   ) %>%
-  group_by(Timepoint) %>%
+  group_by(DOL_category) %>%
   arrange(study_short, .by_group = TRUE) %>%
   ungroup()
 
 levels_prev <- prev_by_study_tp %>%
-  arrange(Timepoint, study_short) %>%
+  arrange(DOL_category, study_short) %>%
   pull(x_key) %>% unique()
 
 prev_by_study_tp <- prev_by_study_tp %>%
   mutate(x_key = factor(x_key, levels = levels_prev))
 
 hline_data_prev <- prev_by_study_tp %>%
-  group_by(Timepoint) %>%
+  group_by(DOL_category) %>%
   summarise(hline_y = mean(prevalence, na.rm = TRUE), .groups = "drop")
 
 # =========================
-# B) REL. ABUNDANCE (ppm, log) in fixed order (per Timepoint)
+# B) REL. ABUNDANCE (ppm, log) in fixed order (per DOL_category)
 # =========================
 df_for_plot <- df_std %>%
-  left_join(n_by_group, by = c("study","Timepoint")) %>%
+  left_join(n_by_group, by = c("study","DOL_category")) %>%
   mutate(
     study_short = ifelse(study %in% names(short_map),
                          short_map[as.character(study)],
                          as.character(study)),
-    Timepoint = factor(Timepoint, levels = time_levels),
+    DOL_category = factor(DOL_category, levels = time_levels),
     study_short = factor(study_short, levels = study_order),
     x_label = paste0(as.character(study_short), ", N=", N),
-    x_key   = paste(Timepoint, x_label, sep = "|")
+    x_key   = paste(DOL_category, x_label, sep = "|")
   ) %>%
-  group_by(Timepoint) %>%
+  group_by(DOL_category) %>%
   arrange(study_short, .by_group = TRUE) %>%
   ungroup()
 
 levels_abund <- df_for_plot %>%
-  arrange(Timepoint, study_short) %>%
+  arrange(DOL_category, study_short) %>%
   pull(x_key) %>% unique()
 
 df_for_plot <- df_for_plot %>%
   mutate(x_key = factor(x_key, levels = levels_abund))
 
 hline_data_relab <- df_for_plot %>%
-  group_by(Timepoint) %>%
+  group_by(DOL_category) %>%
   summarise(hline_y = mean(adj_rel * 1e6, na.rm = TRUE), .groups = "drop")
 
 # =========================
@@ -353,7 +356,7 @@ p_prev <- ggplot(prev_by_study_tp, aes(x = x_key, y = prevalence, fill = study_s
   geom_col() +
   scale_y_continuous(labels = scales::percent_format()) +
   scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
-  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  facet_grid(~ DOL_category, scales = "free_x", space = "free") +
   geom_hline(data = hline_data_prev, aes(yintercept = hline_y),
              colour = "black", linetype = 2, inherit.aes = FALSE) +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
@@ -374,7 +377,7 @@ p_rel <- ggplot(df_for_plot, aes(x = x_key, y = adj_rel * 1e6, fill = study_shor
   geom_boxplot(outlier.shape = NA, width = 0.6) +
   scale_y_log10() +
   scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
-  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  facet_grid(~ DOL_category, scales = "free_x", space = "free") +
   geom_hline(data = hline_data_relab, aes(yintercept = hline_y),
              colour = "black", linetype = 2, inherit.aes = FALSE) +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
@@ -401,7 +404,7 @@ ggplot(df_for_plot, aes(x = x_key, y = adj_rel * 1e6, fill = study_short)) +
   geom_boxplot(outlier.shape = NA, width = 0.6) +
   scale_y_log10() +
   scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
-  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  facet_grid(~ DOL_category, scales = "free_x", space = "free") +
   geom_hline(data = hline_data_relab, aes(yintercept = hline_y),
              colour = "black", linetype = 2, inherit.aes = FALSE) +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
@@ -420,11 +423,11 @@ ggplot(df_for_plot, aes(x = x_key, y = adj_rel * 1e6, fill = study_short)) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
 ```
 
-# plot sequencing depths per timepoint and study
+# plot sequencing depths per DOL_category and study
 ```{r}
 
 hline_data_readCount <- df_for_plot %>%
-  group_by(Timepoint) %>%
+  group_by(DOL_category) %>%
   summarise(hline_y = median(Total_read_count, na.rm = TRUE), .groups = "drop")
 
 df_for_plot %>% 
@@ -432,12 +435,12 @@ df_for_plot %>%
   geom_boxplot(outlier.shape = NA, width = 0.6) +
   scale_y_log10() +
   scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
-  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  facet_grid(~ DOL_category, scales = "free_x", space = "free") +
   geom_hline(yintercept = D_star,
              colour = "black", linetype = 2, inherit.aes = FALSE) +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
   labs(
-    title = "Sequencing depth per study and timepoint category",
+    title = "Sequencing depth per study and DOL category",
     y = "Total read count (log scale)", x = "", fill = "Study"
   ) +
   theme_minimal(base_size = 14) +
@@ -448,14 +451,14 @@ df_for_plot %>%
         panel.spacing = unit(1, "lines")) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
-#ggsave("total_seq_depzh.pdf", width = 8, height = 5)
+ggsave("total_seq_depth_20251211.pdf", width = 8, height = 5)
 ```
 
-# plot tax sequencing depths per timepoint and study
+# plot tax sequencing depths per DOL_category and study
 ```{r}
 
 hline_data_readCount_tax <- df_for_plot %>%
-  group_by(Timepoint) %>%
+  group_by(DOL_category) %>%
   summarise(hline_y = median(tax_reads, na.rm = TRUE), .groups = "drop")
 
 df_for_plot %>% 
@@ -463,12 +466,12 @@ df_for_plot %>%
   geom_boxplot(outlier.shape = NA, width = 0.6) +
   scale_y_log10() +
   scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
-  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  facet_grid(~ DOL_category, scales = "free_x", space = "free") +
   geom_hline(data = hline_data_readCount_tax, aes(yintercept = hline_y),
              colour = "black", linetype = 2, inherit.aes = FALSE) +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
   labs(
-    title = "Taxonomic reads per study and timepoint category",
+    title = "Taxonomic reads per study and DOL_category category",
     y = "Taxonomic read count (log scale)", x = "", fill = "Study"
   ) +
   theme_minimal(base_size = 14) +
@@ -479,15 +482,15 @@ df_for_plot %>%
         panel.spacing = unit(1, "lines")) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
-#ggsave("tax_seq_depth.pdf", width = 8, height = 5)
+ggsave("tax_seq_depth_20251211.pdf", width = 8, height = 5)
 ```
 
 # ratio of tax vs total seq depth
-# plot tax sequencing depths per timepoint and study
+# plot tax sequencing depths per DOL_category and study
 ```{r}
 
 #hline_data_readCount_tax <- df_for_plot %>%
- # group_by(Timepoint) %>%
+ # group_by(DOL_category) %>%
 #  summarise(hline_y = median(tax_reads, na.rm = TRUE), .groups = "drop")
 
 df_for_plot %>% 
@@ -495,7 +498,7 @@ df_for_plot %>%
   geom_boxplot(outlier.shape = NA, width = 0.6) +
   scale_y_continuous() +
   scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
-  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  facet_grid(~ DOL_category, scales = "free_x", space = "free") +
   #geom_hline(data = hline_data_readCount_tax, aes(yintercept = hline_y),
            #  colour = "black", linetype = 2, inherit.aes = FALSE) +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
@@ -512,7 +515,7 @@ df_for_plot %>%
   guides(fill = guide_legend(nrow = 1, position = "bottom"))+
   ggpubr::stat_compare_means(method = "kruskal", aes(group=study_short))
 
-#ggsave("ratio_seq_depth.pdf", width = 8, height = 5)
+ggsave("ratio_seq_depth_20251211.pdf", width = 8, height = 5)
 ```
 
 ```{r}
@@ -561,23 +564,7 @@ df_std %>%
 #ggsave("depth_adjustement_effect_saureus_detection.pdf", height = 4, width = 7)
 
 ```
-
-
-# explore why Morrow at DOL 9-42 has a prevalence of 0 after read depth adjustment
 ```{r}
-df_for_plot %>% 
-  filter(x_key=="DOL 9-42|Morrow, N=20")
-  
-df %>% 
-  filter(study=="Morrow_2016_preterm_infants", Timepoint=="DOL 9-42")
-
-# There is only one sample out of 20 = 5%, that had a single read count for S.aureus out of 85362596 reads, hence our normalizing approach works!
-
-```
-
-```{r}
-library(dplyr)
-library(ggplot2)
 
 # before adjustment
 df %>%
@@ -715,31 +702,31 @@ ggplot(df_std, aes(x = log10(Total_read_count),
 # calculate to minimum reads
 ```{r}
 prev_by_study_tp_min <- df_std %>%
-  group_by(study, Timepoint) %>%
+  group_by(study, DOL_category) %>%
   summarise(prevalence = mean(present_min), .groups = "drop") %>%
-  left_join(n_by_group, by = c("study","Timepoint")) %>%
+  left_join(n_by_group, by = c("study","DOL_category")) %>%
   mutate(
     study_short = ifelse(study %in% names(short_map),
                          short_map[as.character(study)],
                          as.character(study)),
-    Timepoint = factor(Timepoint, levels = time_levels),
+    DOL_category = factor(DOL_category, levels = time_levels),
     study_short = factor(study_short, levels = study_order),
     x_label = paste0(as.character(study_short), ", N=", N),
-    x_key   = paste(Timepoint, x_label, sep = "|")
+    x_key   = paste(DOL_category, x_label, sep = "|")
   ) %>%
-  group_by(Timepoint) %>%
+  group_by(DOL_category) %>%
   arrange(study_short, .by_group = TRUE) %>%
   ungroup()
 
 levels_prev_min <- prev_by_study_tp_min %>%
-  arrange(Timepoint, study_short) %>%
+  arrange(DOL_category, study_short) %>%
   pull(x_key) %>% unique()
 
 prev_by_study_tp_min <- prev_by_study_tp_min %>%
   mutate(x_key = factor(x_key, levels = levels_prev))
 
 hline_data_prev_min <- prev_by_study_tp_min %>%
-  group_by(Timepoint) %>%
+  group_by(DOL_category) %>%
   summarise(hline_y = mean(prevalence, na.rm = TRUE), .groups = "drop")
 
 present <- union(unique(as.character(prev_by_study_tp_min$study_short)),
@@ -754,7 +741,7 @@ fill_palette <- fill_palette[legend_order]
   geom_col() +
   scale_y_continuous(labels = scales::percent_format()) +
   scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
-  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  facet_grid(~ DOL_category, scales = "free_x", space = "free") +
   geom_hline(data = hline_data_prev, aes(yintercept = hline_y),
              colour = "black", linetype = 2, inherit.aes = FALSE) +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
@@ -777,7 +764,7 @@ fill_palette <- fill_palette[legend_order]
 ```{r}
 # Collapse presence variables into long format for easier plotting
 prev_by_study_tp <- df_std %>%
-  group_by(study, Timepoint) %>%
+  group_by(study, DOL_category) %>%
   summarise(
     prev_actual = mean(present_actual, na.rm=TRUE),
     prev_min    = mean(present_min, na.rm = TRUE),
@@ -787,17 +774,17 @@ prev_by_study_tp <- df_std %>%
     prev_max    = mean(present_max, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  left_join(n_by_group, by = c("study","Timepoint")) %>%
+  left_join(n_by_group, by = c("study","DOL_category")) %>%
   mutate(
     study_short = ifelse(study %in% names(short_map),
                          short_map[as.character(study)],
                          as.character(study)),
-    Timepoint = factor(Timepoint, levels = time_levels),
+    DOL_category = factor(DOL_category, levels = time_levels),
     study_short = factor(study_short, levels = study_order),
     x_label = paste0(as.character(study_short), ", N=", N),
-    x_key   = paste(Timepoint, x_label, sep = "|")
+    x_key   = paste(DOL_category, x_label, sep = "|")
   ) %>%
-  group_by(Timepoint) %>%
+  group_by(DOL_category) %>%
   arrange(study_short, .by_group = TRUE) %>%
   ungroup()
 
@@ -812,14 +799,14 @@ prev_summary <- prev_by_study_tp %>%
   ) 
 
 levels_prev <- prev_summary%>%
-  arrange(Timepoint, study_short) %>%
+  arrange(DOL_category, study_short) %>%
   pull(x_key) %>% unique()
 
 prev_summary <- prev_summary %>%
   mutate(x_key = factor(x_key, levels = levels_prev))
 
 hline_data_prev <- prev_summary%>%
-  group_by(Timepoint) %>%
+  group_by(DOL_category) %>%
   summarise(medSeqDepth_prev = median(median, na.rm = TRUE)*100, q1Depth_prev = median(prev_1stQ, na.rm = TRUE)*100, q3Depth_prev = median(prev_3rdQ, na.rm = TRUE)*100, .groups = "drop")
 
 p1 <- ggplot(prev_summary, aes(x = x_key, fill = study_short)) +
@@ -829,7 +816,7 @@ p1 <- ggplot(prev_summary, aes(x = x_key, fill = study_short)) +
   geom_errorbar(aes(ymin = q1*100, ymax =q3*100), width = 0.2, colour = "black") +
   #scale_y_continuous(labels = scales::percent_format()) +
   scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
-  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  facet_grid(~ DOL_category, scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
   labs(
     #title = "Meta analysis",
@@ -847,29 +834,41 @@ p1 <- ggplot(prev_summary, aes(x = x_key, fill = study_short)) +
         panel.spacing = unit(1, "lines"), legend.position = "none") #+
  # guides(fill = guide_legend(nrow = 1, position = ""))
 p1
-##ggsave("prevalence_depth_standardized_s_aureus.pdf", height = 5, width = 8)
-#saveRDS(p1, "depth_standardized_S.aureus_prevalence.rds")
+ggsave("prevalence_depth_standardized_s_aureus_20251211.pdf", height = 5, width = 8)
+saveRDS(p1, "depth_standardized_S.aureus_prevalence_20251211.rds")
 ```
 # compare prevalences across seq Depth to rarefied
 ```{r}
 # compare prevalences across seq Depth to rarefied
 
-rare <- read_delim("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/rarefied_1q_seq_depth_prevalence.csv")
+rare <- read_delim("/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/rarefied_1q_seq_depth_prevalence_20251211.csv")
 
 rare %>% 
-  group_by(timepoint_category) %>%
+  group_by(DOL_category) %>%
   summarise(prevalence_median = median(prevalence, na.rm = TRUE)*100, .groups = "drop")
 
 rare %>% 
-  group_by(timepoint_category) %>%
+  group_by(DOL_category) %>%
   count()
 
+df_std %>%
+  group_by(DOL_category) %>%
+  summarise(
+    prev_actual = mean(present_actual, na.rm=TRUE)*100,
+    prev_min    = mean(present_min, na.rm = TRUE)*100,
+    prev_1stQ   = mean(present_1stQ, na.rm = TRUE)*100,
+    prev_median = mean(present_median, na.rm = TRUE)*100,
+    prev_3rdQ   = mean(present_3rdQ, na.rm = TRUE)*100,
+    prev_max    = mean(present_max, na.rm = TRUE)*100,
+    .groups = "drop"
+  )
+
 df_r_d <- data.frame(
-  Timepoint = c("DOL 1-8", "DOL 9-42", "DOL 43-455",
+  DOL_category = c("DOL 1-8", "DOL 9-42", "DOL 43-455",
                 "DOL 1-8", "DOL 9-42", "DOL 43-455"),
-  stan_Depth_prev = c(9.485816, 18.832237, 12.982273, 17.14539, 23.02632, 14.14286),
+  stan_Depth_prev = c(6.8, 20.2, 18.04, 9.8, 26.6, 21.4),
   
-  rar_prev = c(11.82796,21.875,12.5,16.66667,16.94915,17.02128),
+  rar_prev = c(8.6,21.47,14.28,NA,NA,NA),
   Depth = c("q1","q1","q1", "median","median","median")
 )
 
@@ -877,7 +876,7 @@ df_r_d%>%
   filter(Depth=="q1") %>% 
   ggplot(aes(x = rar_prev, 
                     y = stan_Depth_prev)) +
-  geom_point(aes(shape = Depth, color = Timepoint), size = 3) +
+  geom_point(aes(shape = Depth, color = DOL_category), size = 3) +
   geom_smooth(method = "lm", se=FALSE, color = "black") +
   labs(y = "Standardized sequencing depth",
        x = "Rarefied sequencing depth",
@@ -894,7 +893,7 @@ ggplot(prev_summary, aes(x = x_key, fill = study_short)) +
   geom_col(aes(y = actual*100), alpha = 0.7, width = 0.6) +
   #scale_y_continuous(labels = scales::percent_format()) +
   scale_fill_manual(values = fill_palette, breaks = legend_order, drop = FALSE) +
-  facet_grid(~ Timepoint, scales = "free_x", space = "free") +
+  facet_grid(~ DOL_category, scales = "free_x", space = "free") +
   scale_x_discrete(labels = function(x) sub("^[^|]*\\|", "", x)) +
   labs(
     title = "*S. aureus* prevalence at actual seq depth",
@@ -909,6 +908,6 @@ ggplot(prev_summary, aes(x = x_key, fill = study_short)) +
         panel.spacing = unit(1, "lines")) +
   guides(fill = guide_legend(nrow = 1, position = "bottom"))
 
-#ggsave("prevalence_nonadjusted_aureus.pdf", height = 5, width = 8)
+ggsave("prevalence_nonadjusted_aureus_20251211.pdf", height = 5, width = 8)
 ```
 

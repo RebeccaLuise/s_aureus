@@ -259,8 +259,7 @@ metadata_clean <- md_all %>%
   ungroup() %>% 
   filter(!is.na(study_id)) %>% 
   filter(!is.na(subject_id)) %>% 
-  filter(!is.na(timepoint)) %>% 
-  filter(timepoint<=455) %>% 
+  #filter(!is.na(timepoint)) %>% 
   filter(!is.na(delivery))
 
 # Get sample names to keep
@@ -312,19 +311,36 @@ metadata_clean_new %>%
 ```{r}
 meta_all_df <- metadata_clean_new%>% 
   mutate(age_days = case_when(is.na(age_days) ~ (age_years*365.25), T~age_days)) %>% 
-  mutate(age_years = case_when(is.na(age_years) ~ (age_days/365.25), T~age_years))
+  mutate(age_years = case_when(is.na(age_years) ~ (age_days/365.25), T~age_years)) %>% 
+  filter(age_days<=455)
+
+metadata_clean_new%>% 
+  mutate(age_days = case_when(is.na(age_days) ~ (age_years*365.25), T~age_days)) %>% 
+  mutate(age_years = case_when(is.na(age_years) ~ (age_days/365.25), T~age_years)) %>% 
+  filter(age_days>=456)
+
+metadata_clean_new%>% 
+  mutate(age_days = case_when(is.na(age_days) ~ (age_years*365.25), T~age_days)) %>% 
+  ggplot(aes(age_days, study_id, color=study_id))+
+  geom_point()+
+  geom_vline(xintercept =8)+
+  geom_vline(xintercept =42)+
+  geom_vline(xintercept =455)+
+  theme(legend.position = "none")
 
 # create new timepoint of sampling category
 meta_all_df <- meta_all_df %>% 
- mutate(timepoint_category = case_when(timepoint<=8~"DOL 1-8", timepoint>8&timepoint<=42~"DOL 9-42", timepoint>42&timepoint<=455~ "DOL 43-455", timepoint>456~ "DOL >456"))
+ mutate(timepoint_category = case_when(timepoint<=8~"DOL 1-8", timepoint>8&timepoint<=42~"DOL 9-42", timepoint>42&timepoint<=455~ "DOL 43-455", timepoint>456~ "DOL >456")) %>% 
+  mutate(DOL_category = case_when(age_days<=8~"DOL 1-8", age_days>8&age_days<=42~"DOL 9-42", age_days>42&age_days<=455~ "DOL 43-455", age_days>456~ "DOL >456"))
 
 meta_all_df <- meta_all_df %>% 
- mutate(timepoint_category_2 = case_when(timepoint<=8~"DOL 1-8", timepoint>8&timepoint<=28~"DOL 9-28",  timepoint>28&timepoint<=42~ "DOL 28-42",
-timepoint>42&timepoint<=455~ "DOL 43-455",timepoint>456~ "DOL >456"))
+ mutate(timepoint_category_2 = case_when(timepoint<=8~"DOL 1-8", timepoint>8&timepoint<=28~"DOL 9-28",  timepoint>28&timepoint<=42~ "DOL 28-42", timepoint>42&timepoint<=455~ "DOL 43-455",timepoint>456~ "DOL >456")) %>% 
+ mutate(DOL_category_2 = case_when(age_days<=8~"DOL 1-8", age_days>8&age_days<=28~"DOL 9-28",  timepoint>28&timepoint<=42~ "DOL 28-42",age_days>42&age_days<=455~ "DOL 43-455",age_days>456~ "DOL >456"))
 
 class(meta_all_df$timepoint)
 
 summary(as_factor(meta_all_df$timepoint_category))
+summary(as_factor(meta_all_df$DOL_category))
 
 meta_all_df <- meta_all_df %>% 
  mutate(delivery= case_when(delivery=="c-section"~"C-section", delivery=="vaginal"~"Vaginal", T~delivery))
@@ -358,7 +374,7 @@ meta_all_df_sel <- meta_all_df_sel %>%
   left_join(sample_n, by="study_id") %>% 
   left_join(n_samples_perSubject, by="subject_id")
 
-data_sel <-meta_all_df_sel %>% select(study_id.x, geographic_location, gestational_age_weeks, delivery, timepoint, timepoint_category, sample_n, subject_n, n_samples_perSubject, subject_id )
+data_sel <-meta_all_df_sel %>% select(study_id.x, geographic_location, gestational_age_weeks, delivery, timepoint, timepoint_category, age_days, DOL_category, sample_n, subject_n, n_samples_perSubject, subject_id )
 ```
 
 ```{r}
@@ -382,7 +398,7 @@ cont_summary_fun <- function(var){
 }
 
 # List of continuous variables
-cont_vars <- c("timepoint", "sample_n", "subject_n", "n_samples_perSubject")
+cont_vars <- c("age_days", "sample_n", "subject_n", "n_samples_perSubject")
 
 # Apply function to each continuous variable
 cont_summary <- map_dfr(cont_vars, cont_summary_fun)
@@ -399,7 +415,7 @@ cat_summary_fun <- function(var){
 }
 
 # List of categorical variables
-cat_vars <- c("geographic_location", "timepoint_category")
+cat_vars <- c("geographic_location", "DOL_category")
 
 # Apply summary function to each categorical variable
 cat_summary <- map_dfr(cat_vars, cat_summary_fun)
@@ -520,7 +536,7 @@ sample_data(ps_all_clean) <- sample_data(meta_all_df_clean)
 # save cleaned mOTU_preterm_catalogue
 ```{r}
 
-#saveRDS(ps_all_clean, "/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/mOTU_catalogue_totalReadcount.rds")
+#saveRDS(ps_all_clean, "/Users/rebecca/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/mOTU_catalogue_totalReadcount_20251211.rds")
 
 ```
 
@@ -533,7 +549,7 @@ ps_aureus <- prune_taxa(
   x = ps_all_clean
 )
 
-write_rds(ps_aureus, "S.aureus_only_phyloseq.rds")
+write_rds(ps_aureus, "S.aureus_only_phyloseq_20251211.rds")
 
 ```
 
@@ -623,5 +639,5 @@ psmelt_genus <- psmelt_genus %>%
   left_join(meta_all_df %>% select(all_of(c("sample_ps_id", new_cols))),
             by = c("Sample" = "sample_ps_id"))
 
-write_rds(psmelt_genus, "~/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/S.aureus_only_dataframe.rds")
+write_rds(psmelt_genus, "~/Documents/Forschung/S_aureus_letter/r_analysis_s_aureus/s_aureus/Data/S.aureus_only_dataframe_20251211.rds")
 ```
